@@ -47,6 +47,7 @@
         <module>saga-api</module>
         <module>saga-execution</module>
         <module>saga-serialization</module>
+        <module>saga-parent</module>
         <module>sagalog-api</module>
         <module>sagalog-file</module>
         <module>sagalog-postgres</module>
