@@ -1,0 +1,114 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>polyglot-persistence</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+    <name>Polyglot Persistence Sample</name>
+
+    <parent>
+        <groupId>no.cantara.saga.samples</groupId>
+        <artifactId>saga-samples</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <properties>
+        <slf4j.version>1.7.36</slf4j.version>
+        <logback.version>1.2.10</logback.version>
+    </properties>
+
+    <developers>
+        <developer>
+            <name>Kim Christian Gaarder</name>
+            <email>kim.christian.gaarder@gmail.com</email>
+            <url>https://www.linkedin.com/in/kimchristiangaarder/</url>
+            <organization>Cantara</organization>
+            <organizationUrl>https://www.cantara.no/</organizationUrl>
+        </developer>
+    </developers>
+
+    <dependencies>
+        <dependency>
+            <groupId>no.cantara.saga</groupId>
+            <artifactId>saga-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>no.cantara.saga</groupId>
+            <artifactId>sagalog-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>no.cantara.saga</groupId>
+            <artifactId>sagalog-file</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>no.cantara.saga</groupId>
+            <artifactId>saga-serialization</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>no.cantara.saga</groupId>
+            <artifactId>saga-execution</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.undertow</groupId>
+            <artifactId>undertow-core</artifactId>
+            <version>2.2.16.Final</version>
+        </dependency>
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.squareup.tape2</groupId>
+            <artifactId>tape</artifactId>
+            <version>2.0.0-beta1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.1.1</version>
+                <configuration>
+                    <transformers>
+                        <transformer
+                                implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <mainClass>no.cantara.saga.samples.polyglot.PolyglotMain</mainClass>
+                        </transformer>
+                    </transformers>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <!-- workaround for: https://issues.jboss.org/browse/UNDERTOW-1355 -->
+                <configuration>
+                    <argLine>
+                        --illegal-access=deny
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
