@@ -5,7 +5,7 @@
     <groupId>no.cantara.saga</groupId>
     <artifactId>distributed-saga</artifactId>
     <version>1.0.5-SNAPSHOT</version>
-    <packaging>jar</packaging>
+    <packaging>pom</packaging>
 
     <name>Distributed Saga Reactor Module</name>
     <description>Distributed Saga Reactor Module</description>
