@@ -1,11 +1,10 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>no.cantara.saga</groupId>
     <artifactId>distributed-saga</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <packaging>pom</packaging>
 
     <name>Distributed Saga Reactor Module</name>
@@ -39,7 +38,7 @@
         <connection>scm:git:git://github.com/Cantara/distributed-saga.git</connection>
         <developerConnection>scm:git:git@github.com:Cantara/distributed-saga.git</developerConnection>
         <url>https://github.com/Cantara/distributed-saga/tree/master</url>
-        <tag>HEAD</tag>
+        <tag>distributed-saga-1.0.0</tag>
     </scm>
 
     <modules>
