@@ -4,8 +4,8 @@
 
     <groupId>no.cantara.saga</groupId>
     <artifactId>distributed-saga</artifactId>
-    <version>1.0.2-SNAPSHOT</version>
-    <packaging>pom</packaging>
+    <version>1.0.5-SNAPSHOT</version>
+    <packaging>jer</packaging>
 
     <name>Distributed Saga Reactor Module</name>
     <description>Distributed Saga Reactor Module</description>
