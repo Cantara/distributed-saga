@@ -5,13 +5,13 @@
     <parent>
         <groupId>no.cantara.saga</groupId>
         <artifactId>saga-parent</artifactId>
-        <version>1.0.18-SNAPSHOT</version>
+        <version>1.0.18</version>
         <relativePath>../saga-parent/pom.xml</relativePath>
     </parent>
 
     <groupId>no.cantara.concurrent.futureselector</groupId>
     <artifactId>future-selector</artifactId>
-    <version>1.0.18-SNAPSHOT</version>
+    <version>1.0.18</version>
     <packaging>jar</packaging>
 
     <name>Future Selector</name>
