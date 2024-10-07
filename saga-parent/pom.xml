@@ -5,11 +5,11 @@
     <parent>
         <groupId>no.cantara.saga</groupId>
         <artifactId>distributed-saga</artifactId>
-        <version>1.0.19-SNAPSHOT</version>
+        <version>1.0.19</version>
     </parent>
 
     <artifactId>saga-parent</artifactId>
-    <version>1.0.19-SNAPSHOT</version>
+    <version>1.0.19</version>
     <packaging>pom</packaging>
 
     <name>Distributed Saga Parent</name>
