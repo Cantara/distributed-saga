@@ -68,12 +68,12 @@
 
     <distributionManagement>
         <repository>
-            <id>cantara</id>
+            <id>cantara-releases</id>
             <name>Cantara Release Repository</name>
             <url>https://mvnrepo.cantara.no/content/repositories/releases/</url>
         </repository>
         <snapshotRepository>
-            <id>cantara</id>
+            <id>cantara-snapshots</id>
             <name>Cantara Snapshot Repository</name>
             <url>https://mvnrepo.cantara.no/content/repositories/snapshots/</url>
         </snapshotRepository>
