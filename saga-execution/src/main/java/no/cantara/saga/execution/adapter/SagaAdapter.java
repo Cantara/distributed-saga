@@ -44,7 +44,7 @@ public interface SagaAdapter<OUTPUT> {
      *
      * @param sagaNode     the sagaNode for which this compensating action is invoked.
      * @param sagaInput    the original request data associated with this saga.
-     * @param actionOutput the output from executing the {@link #executeAction(Object, Map)} method.
+     * @param actionOutput the output from executing the {@link #executeAction(SagaNode, Object, Map<SagaNode, Object>)} method.
      */
     void executeCompensatingAction(SagaNode sagaNode, Object sagaInput, OUTPUT actionOutput);
 
