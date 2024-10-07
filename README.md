@@ -1,3 +1,6 @@
+![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/Cantara/distributed-saga) ![Build Status](https://jenkins.cantara.no/buildStatus/icon?job=Cantara%20Distributed-Saga) ![GitHub commit activity](https://img.shields.io/github/commit-activity/m/Cantara/distributed-saga?foo=bar) [![Project Status: Active – The project has reached a stable, usable state and is being actively developed.](http://www.repostatus.org/badges/latest/active.svg)](http://www.repostatus.org/#active) [![Known Vulnerabilities](https://snyk.io/test/github/Cantara/distributed-saga/badge.svg)](https://snyk.io/test/github/Cantara/distributed-saga)
+
+
 # Distributed Saga library and samples
 
 This is a collection of java libraries that constitute an implementation of the distributed-saga pattern.
