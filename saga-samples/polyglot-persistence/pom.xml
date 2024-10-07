@@ -3,14 +3,14 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>polyglot-persistence</artifactId>
-    <version>1.0.12</version>
+    <version>1.0.13-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>Polyglot Persistence Sample</name>
 
     <parent>
         <groupId>no.cantara.saga.samples</groupId>
         <artifactId>saga-samples</artifactId>
-        <version>1.0.12</version>
+        <version>1.0.13-SNAPSHOT</version>
     </parent>
 
     <properties>
