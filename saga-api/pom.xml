@@ -5,12 +5,12 @@
     <parent>
         <groupId>no.cantara.saga</groupId>
         <artifactId>saga-parent</artifactId>
-        <version>1.0.15-SNAPSHOT</version>
+        <version>1.0.15</version>
         <relativePath>../saga-parent/pom.xml</relativePath>
     </parent>
 
     <artifactId>saga-api</artifactId>
-    <version>1.0.15-SNAPSHOT</version>
+    <version>1.0.15</version>
     <packaging>jar</packaging>
 
     <name>Saga API</name>

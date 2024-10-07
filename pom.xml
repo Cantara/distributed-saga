@@ -4,7 +4,7 @@
 
     <groupId>no.cantara.saga</groupId>
     <artifactId>distributed-saga</artifactId>
-    <version>1.0.15-SNAPSHOT</version>
+    <version>1.0.15</version>
     <packaging>pom</packaging>
 
     <name>Distributed Saga Reactor Module</name>
@@ -38,7 +38,7 @@
         <connection>scm:git:git://github.com/Cantara/distributed-saga.git</connection>
         <developerConnection>scm:git:git@github.com:Cantara/distributed-saga.git</developerConnection>
         <url>https://github.com/Cantara/distributed-saga/tree/master</url>
-        <tag>HEAD</tag>
+        <tag>v1.0.15</tag>
     </scm>
 
     <modules>
