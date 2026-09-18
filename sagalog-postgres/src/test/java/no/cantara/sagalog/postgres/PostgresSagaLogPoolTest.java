@@ -25,7 +25,10 @@ public class PostgresSagaLogPoolTest {
         return Map.of(
                 "cluster.owner", "sagalog",
                 "cluster.name", "internal-sagalog-integration-testing",
-                "cluster.instance-id", "01"
+                "cluster.instance-id", "01",
+                // cleanDatabase() reads this for CREATE SCHEMA ... AUTHORIZATION.
+                // Without it the username is null and the statement fails.
+                "postgres.driver.user", "postgres"
         );
     }
 
@@ -44,6 +47,18 @@ public class PostgresSagaLogPoolTest {
     @BeforeMethod
     public void setup() {
         Map<String, String> configuration = configuration();
+        // Every test in this module shares ONE embedded Postgres:
+        // EmbeddedPostgresDataSource holds it in a static singleton. clusterWideLogIds()
+        // lists tables by the SAGALOG_<namespace>_ prefix, so any log left behind by an
+        // earlier test, in this class or another, shows up here. PostgresSagaLogTest uses
+        // the same namespace and leaves 'the-saga-log' behind, which is what broke
+        // thatClusterWideLogIdsAreTheSameAsInstanceLocalLogIds.
+        // Neither truncate() nor delete() drops the table, so the schema has to go.
+        try {
+            cleanDatabase(configuration, new EmbeddedPostgresDataSource("postgres", "postgres", "postgres"));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
         EmbeddedPostgresSagaLogInitializer embeddedPostgresSagaLogInitializer = new EmbeddedPostgresSagaLogInitializer();
         pool = embeddedPostgresSagaLogInitializer.initialize(configuration);
         for (SagaLogId sagaLogId : pool.instanceLocalLogIds()) {
