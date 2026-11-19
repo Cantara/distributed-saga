@@ -1,5 +1,6 @@
 package no.cantara.sagalog.file;
 
+import no.cantara.sagalog.SagaLog;
 import no.cantara.sagalog.SagaLogBusyException;
 import no.cantara.sagalog.SagaLogEntry;
 import no.cantara.sagalog.SagaLogEntryBuilder;
@@ -65,14 +66,21 @@ public class FileSagaLogLockAndIdTest {
     }
 
     @Test
-    public void thatDeleteRemovesTheLockFile() throws Exception {
+    public void thatDeleteKeepsTheLockFileAndALogCanBeMadeAgain() throws Exception {
         FileSagaLogPool pool = new FileSagaLogPool(Paths.get("target"), "01");
         pool.connect(logId).write(start("e1")).join();
         pool.remove(logId);
         Path lock = FileSagaLog.lockPath(logId.getPath());
         assertTrue(Files.exists(lock));
-        pool.delete(logId);
-        assertTrue(!Files.exists(lock) && !Files.exists(logId.getPath()));
+        assertTrue(pool.delete(logId));
+        assertTrue(Files.exists(lock), "the lock file stays, so every process locks the same file");
+        assertTrue(!Files.exists(logId.getPath()), "the log file is deleted");
+        assertTrue(!pool.clusterWideLogIds().contains(logId), "a deleted log is not listed");
+        // the log can be made again under the same name, and it starts empty
+        SagaLog again = pool.connect(logId);
+        assertEquals(again.readIncompleteSagas().count(), 0L);
+        again.write(start("e2")).join();
+        pool.remove(logId);
     }
 
     @Test

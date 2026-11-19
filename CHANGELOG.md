@@ -6,6 +6,23 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
 
 ### Breaking changes and how to migrate
 
+- **Upgrade every instance together.** Stop every instance that runs 2.1.0 before the first instance starts on this
+  version; don't run the two side by side. The PostgreSQL log's takeover check (sp-1) works only when every process
+  writes the owner token, which 2.1.0 doesn't, and the file log stores its next entry id where 2.1.0 doesn't look
+  (sf-9).
+- **The PostgreSQL schema gets two additions, applied automatically and idempotently** (sp-1, sp-10):
+  - the `Locks` table gets a column `owner_token bigint NOT NULL DEFAULT 0` when the pool is initialised;
+  - each saga-log table gets an index on `(txid, entry_id)` when the log is opened.
+
+  Nothing is dropped or renamed, and 2.1.0 ignores both, so a downgrade works. On a large existing log table, the
+  first open after the upgrade builds the index and briefly blocks writes to that table. The database user needs the
+  rights to alter `Locks` and to create indexes; the owner of the schema the library creates has them. The stale
+  example script `sagalog-postgres/init-db.sql` was removed: the library creates its schema and tables itself.
+- **File saga log: `delete` keeps the log's lock file** and deletes only the log file. Before (2.1.0, and the first
+  fix of sf-3), it also deleted the lock file, which let a process that had just opened the old lock file hold a lock
+  nobody else saw. **Migration:** a deleted log leaves a small `<log>.sagalog.lock` file in the folder. The library
+  ignores it; remove such files only when no process uses the folder.
+
 - **sp-6: the PostgreSQL saga log refuses names that are not plain identifiers, and table names over 63 bytes.**
   `cluster.owner` must be letters, digits, `_` and `-`; `cluster.name` and `cluster.instance-id` letters, digits and
   `-`; log names letters, digits and `_ . : $ -`; the schema and the table name `SAGALOG_<name>_<instance>_<log>` at

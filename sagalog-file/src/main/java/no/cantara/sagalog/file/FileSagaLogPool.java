@@ -77,8 +77,9 @@ class FileSagaLogPool extends AbstractSagaLogPool {
         try {
             boolean deleted;
             try (FileSagaLogLock lock = FileSagaLogLock.acquire(path)) {
+                // the lock file stays: every process always locks the same file, so no open can hold a lock on a
+                // lock file that a delete removed (see "delete takes the lock" in the docs)
                 deleted = Files.deleteIfExists(path);
-                Files.deleteIfExists(lock.file()); // while it is held: see "One open log per file" in the docs
             }
             Directories.sync(path.getParent());
             return deleted;
