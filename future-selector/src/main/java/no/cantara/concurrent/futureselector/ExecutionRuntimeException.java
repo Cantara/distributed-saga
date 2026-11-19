@@ -1,6 +1,8 @@
 package no.cantara.concurrent.futureselector;
 
 public class ExecutionRuntimeException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public ExecutionRuntimeException() {
         super();
     }

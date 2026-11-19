@@ -1,6 +1,8 @@
 package no.cantara.concurrent.futureselector;
 
 public class TimeoutRuntimeException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public TimeoutRuntimeException() {
         super();
     }
