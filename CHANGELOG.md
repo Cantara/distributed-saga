@@ -15,6 +15,9 @@
     failure.
   - `saga-execution`: a walk that selects a failed dependency now ends with that failure. The outcome of the saga is
     unchanged: the completion future fails with the action's exception, and nothing is rolled back.
+- **A failed saga fails with the action's own exception.** With the fix above, two walks could complete the saga's
+  completion future, and in some runs it failed with an `ExecutionRuntimeException` wrapping the action's exception.
+  Now it always fails with the action's exception, as in 2.0.0.
 - **The PostgreSQL saga log gives its connection back when it is closed.** `PostgresSagaLog.close()` released the
   advisory lock but kept the connection, and left it idle in an open transaction. An application that recovers other
   instances' logs (take ownership, read, truncate, `remove`, `delete`) used up one connection per log on every pass,
