@@ -18,6 +18,16 @@
 - **A failed saga fails with the action's own exception.** With the fix above, two walks could complete the saga's
   completion future, and in some runs it failed with an `ExecutionRuntimeException` wrapping the action's exception.
   Now it always fails with the action's exception, as in 2.0.0.
+- **The file saga log locks its file.** Opening a log takes an exclusive operating-system lock on `<log file>.lock`
+  until it is closed; a second open, in any process, fails with `SagaLogBusyException`. Before, two processes could
+  write the same file and lose entries. `delete` removes the lock file too. Migration: close a `FileSagaLog` before
+  opening the same log again (the saga-log pools already do).
+- **File saga log entry ids stay unique across restarts.** They restarted at 0 when a log was opened again, so
+  `truncate(id)` could remove the wrong entries; now they continue after the highest id in the file.
+- **Rollback of a node that started but did not end** no longer fails with a `NullPointerException` while gathering
+  the outputs of the node's dependencies.
+- **`FutureSelector.select(timeout, unit)` no longer counts a timeout as a selection**, so `pending()` stays right
+  after a timeout.
 - **The PostgreSQL saga log gives its connection back when it is closed.** `PostgresSagaLog.close()` released the
   advisory lock but kept the connection, and left it idle in an open transaction. An application that recovers other
   instances' logs (take ownership, read, truncate, `remove`, `delete`) used up one connection per log on every pass,

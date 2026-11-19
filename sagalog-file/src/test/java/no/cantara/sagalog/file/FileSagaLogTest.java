@@ -3,6 +3,7 @@ package no.cantara.sagalog.file;
 import no.cantara.sagalog.SagaLog;
 import no.cantara.sagalog.SagaLogEntry;
 import no.cantara.sagalog.SagaLogEntryBuilder;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -29,6 +30,13 @@ public class FileSagaLogTest {
     @BeforeMethod
     public void recreateSagaLog() {
         sagaLog = createNewSagaLog();
+    }
+
+    @AfterMethod(alwaysRun = true)
+    public void closeSagaLog() throws IOException {
+        if (sagaLog != null) {
+            sagaLog.close(); // releases the log's file lock
+        }
     }
 
     FileSagaLog createNewSagaLog() {

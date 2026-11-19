@@ -47,7 +47,10 @@ class FileSagaLogPool extends AbstractSagaLogPool {
     @Override
     protected boolean deleteExternal(SagaLogId logId) {
         try {
-            return Files.deleteIfExists(((FileSagaLogId) logId).getPath());
+            Path path = ((FileSagaLogId) logId).getPath();
+            boolean deleted = Files.deleteIfExists(path);
+            Files.deleteIfExists(FileSagaLog.lockPath(path));
+            return deleted;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

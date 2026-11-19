@@ -41,10 +41,10 @@ SagaLogPool pool = initializer.initialize(Map.of(
 - **No spaces in execution ids or node ids.** The fields are separated by spaces and not escaped; a space makes the
   entry, and the log, unreadable. Node ids cannot have spaces (see [saga-api](saga-api.md)); execution ids must not
   either. Saga names may contain spaces.
-- **Entry ids restart at 0 when a log is opened again.** After a restart, new entries can have the same ids as
-  entries already in the file, so `truncate(id)` can remove the wrong entries. Use `truncate()` (all entries) after a
-  restart, not `truncate(id)`.
-- **No lock between processes.** Two processes that open the same file both write to it, and entries are lost. Make
-  sure each log file is used by one process only (one `cluster.instance-id` per process and folder).
+- **One open log per file.** Opening a log takes an exclusive lock on `<log file>.lock` (an operating-system file
+  lock, so it holds between processes) until `close()`. A second open, in another process or in the same one, fails
+  with `SagaLogBusyException`. `delete` removes the lock file too.
+- Entry ids continue after the highest id in the file when a log is opened again, so they stay unique across
+  restarts.
 - Power loss during a write can corrupt the file on file systems that do not write a segment atomically (most of
   them); this is a property of the Tape format.

@@ -45,8 +45,7 @@ while (selector.pending()) {
 - A future is selectable when it completes, normally or exceptionally. Check the selected future
   (`isCompletedExceptionally()`, or `get()`, which throws for a failed one). Before 2.0.1 a future that failed was never
   selected, and `select()` waited for ever for it.
-- `select(timeout, unit)` counts a timed-out call as a selection: after a timeout, `pending()` reports one future fewer
-  than are actually unselected.
+- `select(timeout, unit)` returns null on timeout and selects nothing: `pending()` still counts the future.
 - Cancelling a `SelectableFuture` does not interrupt its running task.
 
 These limits affect `saga-execution`; see [Known limitations](../limitations.md).
