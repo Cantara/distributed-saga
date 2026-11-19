@@ -36,7 +36,6 @@ unchanged; only the version changes from 1.0.x to 2.0.0.
   (`ORDER BY entry_id`), as the memory and file logs always did. Before, PostgreSQL returned the rows in its physical
   order, which can differ after deletes. The `SagaLog` Javadoc now states the order, and that `readIncompleteSagas()`
   returns every entry in the log, including those of finished sagas that have not been truncated yet.
-
 - **`sagalog-postgres`: the `data` column is `text`, not `json`.** An entry's data (`SagaLogEntry.getJsonData()`)
   is whatever the action's serializer produced, which need not be JSON: the default
   `ActionOutputSerializerToStringAndStringConstructor` writes an `Adapter<String>`'s output as bare text. The memory
