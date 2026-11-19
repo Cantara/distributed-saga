@@ -15,6 +15,7 @@ import no.cantara.sagalog.SagaLogId;
 import no.cantara.sagalog.SagaLogInitializer;
 import no.cantara.sagalog.SagaLogPool;
 import org.testng.annotations.AfterClass;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -54,8 +55,9 @@ import static org.testng.Assert.fail;
  * had already ended;</li>
  * <li>a crash at any point of a run (the log cut after any entry) is completed by forward recovery.</li>
  * </ol>
+ * Runs once per saga-log provider (the concrete subclasses). Every log a row opens is removed and deleted after it.
  */
-public class SagaFaultMatrixTest {
+public abstract class SagaFaultMatrixTest {
 
     static final int REPEAT = Integer.getInteger("matrix.repeat", 3); // -Dmatrix.repeat=200 for a stress run
 
@@ -206,22 +208,68 @@ public class SagaFaultMatrixTest {
     SelectableThreadPoolExectutor pool;
     SagaLogPool logPool;
 
-    @BeforeClass
-    public void setUp() {
-        pool = new SelectableThreadPoolExectutor(32, 32, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+    final List<SagaLogId> openedLogs = new CopyOnWriteArrayList<>();
+
+    /**
+     * The saga-log pool of the provider under test.
+     */
+    protected abstract SagaLogPool createLogPool() throws Exception;
+
+    /**
+     * Called after the pool is shut down.
+     */
+    protected void closeProvider() throws Exception {
+    }
+
+    static SagaLogPool initialize(String initializerClass, Map<String, String> overrides) {
         SagaLogInitializer initializer = ServiceLoader.load(SagaLogInitializer.class).stream()
-                .filter(c -> "no.cantara.sagalog.memory.MemorySagaLogInitializer".equals(c.type().getName()))
-                .findFirst().orElseThrow().get();
-        logPool = initializer.initialize(initializer.configurationOptionsAndDefaults());
+                .filter(c -> initializerClass.equals(c.type().getName()))
+                .findFirst().orElseThrow(() -> new IllegalStateException("no provider " + initializerClass)).get();
+        Map<String, String> configuration = new LinkedHashMap<>(initializer.configurationOptionsAndDefaults());
+        configuration.putAll(overrides);
+        return initializer.initialize(configuration);
+    }
+
+    @BeforeClass
+    public void setUp() throws Exception {
+        pool = new SelectableThreadPoolExectutor(32, 32, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        logPool = createLogPool();
+    }
+
+    @AfterMethod(alwaysRun = true)
+    public void removeLogs() {
+        for (SagaLogId id : openedLogs) {
+            logPool.remove(id);
+            logPool.delete(id);
+        }
+        openedLogs.clear();
     }
 
     @AfterClass(alwaysRun = true)
-    public void tearDown() {
+    public void tearDown() throws Exception {
         pool.shutdownNow();
+        if (logPool != null) {
+            logPool.shutdown();
+        }
+        closeProvider();
+    }
+
+    /**
+     * Removes and deletes a log before the row ends; a provider may hold a resource per open log (PostgreSQL: one
+     * connection), so a row that opens many logs gives each back when done with it.
+     */
+    void discard(FaultySagaLog log) {
+        SagaLogId id = log.id();
+        if (openedLogs.remove(id)) {
+            logPool.remove(id);
+            logPool.delete(id);
+        }
     }
 
     FaultySagaLog newLog() {
-        return new FaultySagaLog(logPool.connect(logPool.idFor(logPool.getLocalClusterInstanceId(), "m-" + UUID.randomUUID())));
+        SagaLogId id = logPool.idFor(logPool.getLocalClusterInstanceId(), "m" + UUID.randomUUID().toString().replace("-", ""));
+        openedLogs.add(id);
+        return new FaultySagaLog(logPool.connect(id));
     }
 
     static List<String> entries(SagaLog log, String executionId) {
@@ -452,6 +500,7 @@ public class SagaFaultMatrixTest {
             }
             Run run = execute(saga, world, log, UUID.randomUUID().toString(), false);
             violations.addAll(check(saga, world, log, run, injected, where + " run " + i));
+            discard(log);
         }
         report(violations);
     }
@@ -507,6 +556,7 @@ public class SagaFaultMatrixTest {
                 problems.add(0, where + " run " + i + " -> " + state + " failed with " + (run.failure == null ? "-" : describe(run.failure)) + " " + run.entries);
             }
             violations.addAll(problems);
+            discard(log);
         }
         report(violations);
     }
@@ -591,12 +641,14 @@ public class SagaFaultMatrixTest {
                         problems.add("recovery ran " + step + " again although it had ended");
                     }
                 }
+                discard(log);
                 if (!problems.isEmpty()) {
                     problems.add(0, shape + "/" + runKind + " crash after " + cutEntries + " run " + i + " -> " + recovered.entries);
                     violations.addAll(problems);
                     break;
                 }
             }
+            discard(full);
         }
         report(violations);
     }

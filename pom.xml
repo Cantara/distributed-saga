@@ -50,6 +50,7 @@
         <module>sagalog-api</module>
         <module>sagalog-file</module>
         <module>sagalog-postgres</module>
+        <module>saga-fault-matrix</module>
         <module>saga-samples</module>
     </modules>
 

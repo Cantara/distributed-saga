@@ -18,6 +18,24 @@ mvn -o clean verify          # offline, once the dependencies are in ~/.m2
 Every module's tests use TestNG and run in `mvn verify`. `sagalog-postgres`'s database tests are in the TestNG group
 `integration`, and run in the normal build.
 
+### The fault matrix
+
+`saga-fault-matrix` (tests only, not deployed) injects one fault at every point of a saga and checks that the saga
+ends in a defined state: succeeded, rolled back, or unfinished and then completed by forward recovery. Nothing may
+hang or leak a pool thread. The rows are 4 saga shapes × every step × the failure points (an action before or after
+its effect, the `Start` or `End` write, a compensation) × the failure kinds (`RuntimeException`, `Error`,
+`AbortSagaException`), plus a crash after every log entry of a run. The same 190 rows run once per saga-log
+provider: `MemorySagaFaultMatrixTest`, `FileSagaFaultMatrixTest` and `PostgresSagaFaultMatrixTest` (embedded
+PostgreSQL, through the production initializer).
+
+```sh
+mvn -o verify -pl saga-fault-matrix                       # every provider, each row 3 times
+mvn -o verify -pl saga-fault-matrix -Dmatrix.repeat=200   # stress run
+mvn -o verify -pl saga-fault-matrix -Dtest=FileSagaFaultMatrixTest
+```
+
+A failing row prints a line starting with `MATRIX-FINDING`, with the log entries of the run.
+
 ## Layout
 
 ```
@@ -30,6 +48,7 @@ saga-serialization/          sagas to and from JSON
 sagalog-api/                 the saga-log SPI, the pool, the memory log
 sagalog-file/                the file saga log (with a copy of Tape's QueueFile)
 sagalog-postgres/            the PostgreSQL saga log
+saga-fault-matrix/           the fault matrix, run on every saga-log provider (tests only, not deployed)
 saga-samples/                sample applications (not deployed)
 docs/                        this documentation
 CHANGELOG.md, NOTICE, LICENSE
