@@ -157,8 +157,10 @@ class SagaTraversal {
                 SelectableFuture<Object> selectableFuture = null;
                 try {
                     selectableFuture = selected.future.get();
-                } catch (InterruptedException | ExecutionException e) {
-                    throw Utils.launder(e); // a node this one depends on failed: end this walk
+                } catch (ExecutionException e) {
+                    throw dependencyFailure(e); // a node this one depends on failed: end this walk
+                } catch (InterruptedException e) {
+                    throw Utils.launder(e);
                 }
                 selector.add(selectableFuture, selected.control);
             }
@@ -172,7 +174,9 @@ class SagaTraversal {
                 Object output;
                 try {
                     output = selected.future.get(); // will never block
-                } catch (InterruptedException | ExecutionException e) {
+                } catch (ExecutionException e) {
+                    throw dependencyFailure(e);
+                } catch (InterruptedException e) {
                     throw Utils.launder(e);
                 }
                 outputByNode.put(selected.control, output);
@@ -239,5 +243,20 @@ class SagaTraversal {
 
         // traverse last child within this thread
         return traverse(pendingWalks, futureThreadWalk, traversedInThread, forward, effectiveChildren.get(effectiveChildren.size() - 1), childAncestors, visitedById, futureById, handoffFuture, completionFuture, visit);
+    }
+
+    /**
+     * The failure of a node this walk depends on, as that node's walk threw it. Every walk that sees a failure then
+     * completes the saga with the same exception, whichever of them is first.
+     */
+    private static RuntimeException dependencyFailure(ExecutionException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof RuntimeException) {
+            return (RuntimeException) cause;
+        }
+        if (cause instanceof Error) {
+            throw (Error) cause;
+        }
+        return Utils.launder(e);
     }
 }
