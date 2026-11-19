@@ -9,7 +9,6 @@ module no.cantara.saga.samples.polyglot {
     requires java.net.http;
     requires undertow.core;
     requires org.json;
-    requires tape;
     requires no.cantara.sagalog;
     requires no.cantara.sagalog.file;
 

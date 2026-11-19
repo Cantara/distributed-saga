@@ -50,12 +50,17 @@ unchanged; only the version changes from 1.0.x to 2.0.0.
   `no.cantara.concurrent.futureselector`; `no.cantara.saga.serialization` now `requires transitive`
   `no.cantara.saga.api`. These types appear in their public API, so a module that requires them now reads the others
   too; `requires` you wrote for them yourself still work.
-- Known: `no.cantara.sagalog.file` requires `tape`, an automatic module whose name comes from the jar file name
-  (tape 2.0.0-beta1 has no module name). `no.cantara.sagalog.postgres` requires `org.postgresql.jdbc`, an automatic
+- `no.cantara.sagalog.file` no longer requires the `tape` automatic module (see Dependencies).
+- Known: `no.cantara.sagalog.postgres` requires `org.postgresql.jdbc`, an automatic
   module with a stable name from the driver's manifest.
 
 ### Dependencies
 
 - HikariCP 6.3.3 → 7.1.0, org.json 20250517 → 20260814, undertow 2.3.20.Final → 2.4.4.Final (sample),
   logback 1.6.7 → 1.6.8 (tests and sample); test only: h2 2.5.252, embedded-postgres 2.2.2 with PostgreSQL 18.
-- Unchanged: postgresql 42.7.14, slf4j-api 2.0.20, tape 2.0.0-beta1.
+- **Tape removed** (`com.squareup.tape2:tape:2.0.0-beta1`, unmaintained, repository archived). `sagalog-file` now
+  has its own copy of Tape's `QueueFile` (`no.cantara.sagalog.file.queue`, not exported), with Square, Inc.'s
+  copyright and license kept and attributed in `NOTICE`. The file format is the same: saga-log files written by 1.x
+  are read by 2.0.0, which a test checks against a file written by the Tape jar. If your own code used Tape through
+  this library's dependency, declare Tape yourself.
+- Unchanged: postgresql 42.7.14, slf4j-api 2.0.20.
