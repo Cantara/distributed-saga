@@ -29,6 +29,7 @@ future-selector        saga-api                    sagalog-api
 | `sagalog-file` | `sagalog-api` | none (it has its own copy of Tape's `QueueFile`, see [NOTICE](../NOTICE)) |
 | `sagalog-postgres` | `sagalog-api` | HikariCP, PostgreSQL JDBC driver, SLF4J API |
 | `saga-samples/polyglot-persistence` | all modules except `sagalog-postgres` | Undertow, org.json |
+| `saga-fault-matrix` (tests only, not deployed) | `saga-execution` and every saga-log provider | embedded PostgreSQL (test) |
 
 `saga-parent` is a pom-only module that the library modules use as their parent. It adds nothing to the root pom.
 
