@@ -26,21 +26,20 @@ SagaLogPool pool = initializer.initialize(Map.of(
   `*.sagalog` file in the folder.
 - Each file is a queue file: a ring buffer with a small header, where a change takes effect only when the header is
   rewritten. Every write is synchronous; data is on disk when `write` returns. The implementation is a copy of Square's
-  Tape `QueueFile` (2.0.0-beta1), in the package `no.cantara.sagalog.file.queue`; see [NOTICE](../../NOTICE). Its file
-  format is unchanged, so files written by 1.x are read by 2.x.
-- Each entry is one queue element: the text `<id> <executionId> <type> <nodeId>[ <sagaName>][ <data>]` in UTF-8.
+  Tape `QueueFile` (2.0.0-beta1), in the package `no.cantara.sagalog.file.queue`; see [NOTICE](../../NOTICE). The queue
+  file format is Tape's, unchanged; the entry records inside it changed in 2.0.1 (below).
+- Each entry is one queue element in a binary record: a format-version byte (`2`), the id as a long, then execution
+  id, entry type, node id, saga name and data, each as a length-prefixed UTF-8 string (length `-1` for null). Any
+  text is stored as it is.
 - `truncate(id)` removes the first elements up to and including that id; `truncate()` clears the file. `delete`
   deletes the file.
 - Writes, truncates and reads of one log are synchronized within the process.
 
 ## Behaviour to know
 
-- **Entry data is kept only when it starts with `{` (a JSON object).** Other data, such as `OK`, `[1,2]` or a JSON
-  string, is read back as `null`. The same applies to the saga input on the first entry; input that is not a JSON object
-  is lost, and the saga name read back is wrong. Use JSON-object output and input with this log.
-- **No spaces in execution ids or node ids.** The fields are separated by spaces and not escaped; a space makes the
-  entry, and the log, unreadable. Node ids cannot have spaces (see [saga-api](saga-api.md)); execution ids must not
-  either. Saga names may contain spaces.
+- **Logs written before 2.0.1 cannot be read.** Their entries were space-separated text that lost data not starting
+  with `{`; opening such a log fails with `IllegalStateException` ("unsupported format"). Let their sagas finish with
+  the old version, or delete the log file, before upgrading.
 - **One open log per file.** Opening a log takes an exclusive lock on `<log file>.lock` (an operating-system file
   lock, so it holds between processes) until `close()`. A second open, in another process or in the same one, fails
   with `SagaLogBusyException`. `delete` removes the lock file too.

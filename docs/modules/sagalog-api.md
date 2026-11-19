@@ -80,17 +80,19 @@ Getting a log:
 | Method | What it does |
 |---|---|
 | `tryAcquire(owner)` / `tryAcquire(owner, timeout, unit)` | Takes the next available registered instance-local log, with ownership. Returns null if none (or on timeout). |
-| `release(logId)` | Releases ownership and makes the log available to `tryAcquire` again. |
+| `release(logId)` | Same as `releaseOwnership(logId)`. |
 | `tryTakeOwnership(owner, logId)` / with timeout | Takes ownership of a specific log, connecting it if needed. Returns null if another caller holds it. |
-| `releaseOwnership(logId)` | Releases ownership, without making the log available to `tryAcquire`. |
+| `releaseOwnership(logId)` | Releases ownership. A registered instance-local log becomes available to `tryAcquire` again, however it was taken. |
 | `connect(logId)` | Opens the log without taking ownership in the pool; throws `SagaLogBusyException` if another process holds it. |
-| `remove(logId)` | Closes the log and removes it from the pool. |
-| `delete(logId)` | Deletes the log's storage; the log must be removed first. |
+| `remove(logId)` | Closes the log and removes it from the pool; ownership is unchanged. Call it while you own the log: own, remove, release. |
+| `delete(logId)` | Deletes the log's storage (the file, or the table and its lock row); the log must be removed first. |
 | `shutdown()` | Closes and removes every log. |
 | `instanceLocalSagaLogOwnerships()` | A snapshot of current ownerships, for monitoring. |
 
-Ownership inside a pool is a lock per log: one owner at a time. Across processes, a provider can also lock the log's
-storage when it connects (the PostgreSQL log does, with an advisory lock; the file and memory logs do not).
+Ownership inside a pool is a lock per log: one owner at a time. A registered instance-local log is available to
+`tryAcquire` exactly when nobody owns it, and at most once; taking it with `tryTakeOwnership` makes it unavailable
+too. Across processes, a provider can also lock the log's storage when it connects (the PostgreSQL log with an
+advisory lock, the file log with an operating-system file lock; the memory log is local to the process).
 
 A typical pattern for a server:
 

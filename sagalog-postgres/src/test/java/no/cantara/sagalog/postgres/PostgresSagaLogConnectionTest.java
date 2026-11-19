@@ -129,4 +129,47 @@ public class PostgresSagaLogConnectionTest {
         assertEquals(log.readIncompleteSagas().map(no.cantara.sagalog.SagaLogEntry::getEntryType).collect(Collectors.toList()),
                 java.util.List.of(no.cantara.sagalog.SagaLogEntryType.values()));
     }
+
+    private long count(String sql) throws SQLException {
+        try (Connection connection = admin.getConnection(); Statement st = connection.createStatement()) {
+            connection.setAutoCommit(true);
+            try (ResultSet rs = st.executeQuery(sql)) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        }
+    }
+
+    @Test
+    public void thatDeleteDropsTheTableAndItsLock() throws Exception {
+        SagaLogId id = pool.idFor("10", "departed");
+        SagaLog log = pool.connect(id);
+        log.write(new no.cantara.sagalog.SagaLogEntryBuilder().startSaga("e1", "saga", "{}")).join();
+        assertEquals(count("SELECT count(*) FROM pg_tables WHERE schemaname = '" + SCHEMA + "' AND tablename = 'SAGALOG_connections_10_departed'"), 1L);
+
+        pool.remove(id);
+        assertEquals(pool.delete(id), true);
+        assertEquals(count("SELECT count(*) FROM pg_tables WHERE schemaname = '" + SCHEMA + "' AND tablename = 'SAGALOG_connections_10_departed'"), 0L);
+        assertEquals(count("SELECT count(*) FROM \"" + SCHEMA + "\".\"Locks\" WHERE instance_id = '10' AND log_id = 'departed'"), 0L);
+        assertEquals(pool.clusterWideLogIds().contains(id), false, "a deleted log is no longer listed");
+        assertEquals(pool.delete(id), false, "deleting a log that does not exist");
+
+        // the log can be used again; it starts empty
+        SagaLog again = pool.connect(id);
+        assertEquals(again.readIncompleteSagas().count(), 0L);
+    }
+
+    @Test
+    public void thatALogOpenInAnotherPoolIsNotDeleted() throws Exception {
+        PostgresSagaLogPool other = new EmbeddedPostgresSagaLogInitializer().initialize(Map.of(
+                "cluster.owner", SCHEMA, "cluster.name", "connections", "cluster.instance-id", "03"));
+        try {
+            SagaLogId id = pool.idFor("03", "in-use");
+            other.connect(id).write(new no.cantara.sagalog.SagaLogEntryBuilder().startSaga("e1", "saga", "{}")).join();
+            org.testng.Assert.expectThrows(no.cantara.sagalog.SagaLogBusyException.class, () -> pool.delete(id));
+            assertEquals(other.connect(id).readIncompleteSagas().count(), 1L, "the log in use is untouched");
+        } finally {
+            other.shutdown();
+        }
+    }
 }

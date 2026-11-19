@@ -297,4 +297,40 @@ public class SagaExecutionCompensationTest {
         assertEquals(net("a"), 1);
         assertEquals(net("b"), 1);
     }
+
+    // ---- an abort next to another failure is not lost (j) -------------------------------------------------------
+
+    @Test
+    public void thatAnAbortNextToAnotherFailureIsAttachedToIt() {
+        Saga saga = Saga.start("abort-and-failure").linkTo("txlog")
+                .id("txlog").adapter("txlog").linkTo("persistence", "search")
+                .id("persistence").adapter("persistence").linkToEnd()
+                .id("search").adapter("search").linkToEnd()
+                .end();
+        IllegalStateException searchDown = new IllegalStateException("search down");
+        java.util.concurrent.CountDownLatch searchStarted = new java.util.concurrent.CountDownLatch(1);
+        AdapterLoader adapters = new AdapterLoader()
+                .register(compensating("txlog"))
+                .register(new Adapter<>(String.class, "persistence", (i, d) -> {
+                    try {
+                        searchStarted.await(5, TimeUnit.SECONDS); // both actions run when the abort happens
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    throw new AbortSagaException("persistence aborts first");
+                }, (i, o) -> effects.add("undo:persistence")))
+                .register(new Adapter<>(String.class, "search", (i, d) -> {
+                    searchStarted.countDown();
+                    sleep(200);
+                    throw searchDown;
+                }, (i, o) -> effects.add("undo:search")));
+        SagaLog log = newLog();
+        String id = UUID.randomUUID().toString();
+        Throwable failure = run(log, saga, adapters, id, false);
+        assertTrue(failure == searchDown, "the saga fails with the other failure: " + failure);
+        assertEquals(failure.getSuppressed().length, 1, java.util.Arrays.toString(failure.getSuppressed()));
+        assertTrue(failure.getSuppressed()[0] instanceof AbortSagaException);
+        // no rollback ran: the saga is left for forward recovery
+        assertFalse(entries(log, id).contains("End:E"), entries(log, id).toString());
+    }
 }

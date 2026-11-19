@@ -75,18 +75,34 @@ public class AbstractSagaLogPoolTest {
         assertNotNull(pool.tryAcquire(new SagaLogOwner("myself"), 1, TimeUnit.MILLISECONDS));
     }
 
-    @Test(expectedExceptions = IllegalStateException.class)
-    public void thatAcquireAnAlreadyOwnedLogWillThrowException() {
+    @Test
+    public void thatALogOwnedThroughTryTakeOwnershipIsNotAcquired() {
         SagaLogId logId = pool.registerInstanceLocalIdFor("already-owned");
         assertNotNull(pool.tryTakeOwnership(new SagaLogOwner("you"), logId));
-        pool.tryAcquire(new SagaLogOwner("me"));
+        assertNull(pool.tryAcquire(new SagaLogOwner("me")), "an owned log is not available");
     }
 
-    @Test(expectedExceptions = IllegalStateException.class)
-    public void thatAcquireWithTimeoutAnAlreadyOwnedLogWillThrowException() throws InterruptedException {
+    @Test
+    public void thatALogOwnedThroughTryTakeOwnershipIsNotAcquiredWithTimeout() throws InterruptedException {
         SagaLogId logId = pool.registerInstanceLocalIdFor("already-owned");
         assertNotNull(pool.tryTakeOwnership(new SagaLogOwner("you"), logId));
-        pool.tryAcquire(new SagaLogOwner("me"), 1, TimeUnit.MILLISECONDS);
+        assertNull(pool.tryAcquire(new SagaLogOwner("me"), 1, TimeUnit.MILLISECONDS), "an owned log is not available");
+    }
+
+    @Test
+    public void thatALocalLogIsAvailableExactlyOnceWhenNotOwned() {
+        SagaLogId logId = pool.registerInstanceLocalIdFor("once");
+        for (int i = 0; i < 5; i++) {
+            // recovery style: take ownership directly, then release (either way)
+            assertNotNull(pool.tryTakeOwnership(new SagaLogOwner("recovery"), logId));
+            if (i % 2 == 0) pool.release(logId);
+            else pool.releaseOwnership(logId);
+        }
+        SagaLog acquired = pool.tryAcquire(new SagaLogOwner("me"));
+        assertNotNull(acquired);
+        assertNull(pool.tryAcquire(new SagaLogOwner("other")), "the log was queued more than once");
+        pool.releaseOwnership(acquired.id()); // releaseOwnership makes a local log available again too
+        assertNotNull(pool.tryAcquire(new SagaLogOwner("other")));
     }
 
     @Test

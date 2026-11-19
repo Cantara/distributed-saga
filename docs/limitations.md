@@ -13,7 +13,9 @@ anything else:
 - the execution's log entries stay as they are, without `End` on `E`, so the execution looks unfinished and recovery
   will run it again;
 - walks of the same saga that wait at a join node for the failed node end with that failure and free their pool
-  threads (before 2.0.1 they stayed blocked for ever, one pool thread per failed saga).
+  threads (before 2.0.1 they stayed blocked for ever, one pool thread per failed saga);
+- if another node threw `AbortSagaException` before the saga completed, no rollback runs either; the abort is attached
+  to the saga's failure as a suppressed exception (`getSuppressed()`).
 
 Catch the exceptions you expect inside your actions, and throw `AbortSagaException` when the saga must be rolled back.
 
@@ -44,9 +46,9 @@ thread and its saga. Put timeouts inside your actions.
 
 ## Saga-log providers
 
-- **File log**: keeps entry data only when it starts with `{`, and has no escaping for spaces. See [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
+- **File log**: one process per log file (it is locked), and logs written before 2.0.1 cannot be read. See [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
 - **PostgreSQL log**: each open log holds a connection, so the connection pool must be larger than the number of logs
-  open at once; `delete(logId)` does not drop the log's table. See [sagalog-postgres](modules/sagalog-postgres.md#connections).
+  open at once. See [sagalog-postgres](modules/sagalog-postgres.md#connections).
 - **Ownership in the pool**: `releaseOwnership(logId)` and `release(logId)` take no owner, so any caller can release
   any log; release only logs you hold.
 
