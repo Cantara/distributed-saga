@@ -128,4 +128,56 @@ public class FileSagaLogLockAndIdTest {
         // the failed open released its lock: another open fails on the format again, not with SagaLogBusyException
         expectThrows(IllegalStateException.class, () -> new FileSagaLog(logId));
     }
+
+    /**
+     * sf-11: reads and truncates use the log's in-memory copy of its entries, not the file. Overwriting the file's
+     * bytes behind the open log (no other process can, because of the lock) shows that no read goes to the file.
+     */
+    @Test
+    public void thatReadsAndTruncatesDoNotReadTheFile() throws Exception {
+        FileSagaLog log = new FileSagaLog(logId);
+        try {
+            for (int i = 0; i < 5; i++) {
+                log.write(start("e" + i)).join();
+            }
+            List<SagaLogEntry> before = log.readIncompleteSagas().collect(Collectors.toList());
+            try (java.nio.channels.FileChannel raw = java.nio.channels.FileChannel.open(logId.getPath(), java.nio.file.StandardOpenOption.WRITE)) {
+                // the queue header (32 bytes) and the element length (4), then version (1), id (8) and the execution
+                // id's length (4): overwrite the first record's execution id "e0" with "zz"
+                raw.write(java.nio.ByteBuffer.wrap("zz".getBytes(java.nio.charset.StandardCharsets.UTF_8)), 32 + 4 + 1 + 8 + 4);
+            }
+            assertEquals(log.readIncompleteSagas().collect(Collectors.toList()), before);
+            assertEquals(log.readEntries("e3").count(), 1L);
+            log.truncate(before.get(1).getId()).join();
+            assertEquals(log.readIncompleteSagas().map(SagaLogEntry::getExecutionId).collect(Collectors.toList()),
+                    List.of("e2", "e3", "e4"));
+        } finally {
+            log.close();
+        }
+    }
+
+    @Test
+    public void thatTheInMemoryCopyMatchesTheFileAfterReopen() throws Exception {
+        FileSagaLog log = new FileSagaLog(logId);
+        List<SagaLogEntry> expected;
+        try {
+            for (int i = 0; i < 6; i++) {
+                log.write(start("e" + i)).join();
+            }
+            List<SagaLogEntry> all = log.readIncompleteSagas().collect(Collectors.toList());
+            log.truncate(all.get(2).getId()).join();
+            log.write(start("e6")).join();
+            expected = log.readIncompleteSagas().collect(Collectors.toList());
+        } finally {
+            log.close();
+        }
+        FileSagaLog reopened = new FileSagaLog(logId);
+        try {
+            assertEquals(reopened.readIncompleteSagas().collect(Collectors.toList()), expected);
+            assertEquals(reopened.readIncompleteSagas().map(SagaLogEntry::getExecutionId).collect(Collectors.toList()),
+                    List.of("e3", "e4", "e5", "e6"));
+        } finally {
+            reopened.close();
+        }
+    }
 }

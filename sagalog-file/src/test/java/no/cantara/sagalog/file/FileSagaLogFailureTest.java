@@ -60,25 +60,31 @@ public class FileSagaLogFailureTest {
         }
     }
 
+    /**
+     * Writes one entry, closes the log, then corrupts the file. Reads use the log's in-memory copy (sf-11), so a corrupt
+     * file is reported when the log is opened.
+     */
+    private FileSagaLogId closedLogWithOneEntry(String name) throws Exception {
+        FileSagaLogId id = id(name);
+        try (FileSagaLog log = new FileSagaLog(id)) {
+            log.write(start("e1")).join();
+        }
+        return id;
+    }
+
     // sf-4: an element length that no longer fits the file is an I/O error while reading
 
     @Test
     public void thatAnIOErrorWhileReadingIsAnUncheckedIOExceptionNamingTheFile() throws Exception {
-        FileSagaLogId id = id("io");
-        try (FileSagaLog log = new FileSagaLog(id)) {
-            SagaLogEntry entry = log.write(start("e1")).join();
-            overwriteInt(id.getPath(), 32, 100_000);
-            try {
-                log.readIncompleteSagas().toList();
-                throw new AssertionError("no exception");
-            } catch (UncheckedIOException e) {
-                assertTrue(e.getMessage().contains(id.getPath().toString()), e.getMessage());
-            } catch (Throwable t) {
-                throw new AssertionError("expected UncheckedIOException, got " + t, t);
-            }
-            CompletableFuture<Void> truncated = log.truncate(entry.getId());
-            CompletionException e = expectThrows(CompletionException.class, truncated::join);
-            assertTrue(e.getCause() instanceof UncheckedIOException, String.valueOf(e.getCause()));
+        FileSagaLogId id = closedLogWithOneEntry("io");
+        overwriteInt(id.getPath(), 32, 100_000);
+        try {
+            new FileSagaLog(id).close();
+            throw new AssertionError("no exception");
+        } catch (UncheckedIOException e) {
+            assertTrue(e.getMessage().contains(id.getPath().toString()), e.getMessage());
+        } catch (Throwable t) {
+            throw new AssertionError("expected UncheckedIOException, got " + t, t);
         }
     }
 
@@ -86,39 +92,30 @@ public class FileSagaLogFailureTest {
 
     @Test
     public void thatANegativeStringLengthIsACorruptEntry() throws Exception {
-        FileSagaLogId id = id("neg");
-        try (FileSagaLog log = new FileSagaLog(id)) {
-            log.write(start("e1")).join();
-            overwriteInt(id.getPath(), FIRST_ELEMENT + 1 + 8, -5); // the execution id's length
-            UncheckedIOException e = expectThrows(UncheckedIOException.class, () -> log.readIncompleteSagas().toList());
-            assertTrue(e.getMessage().contains("Corrupt saga-log entry"), e.getMessage());
-        }
+        FileSagaLogId id = closedLogWithOneEntry("neg");
+        overwriteInt(id.getPath(), FIRST_ELEMENT + 1 + 8, -5); // the execution id's length
+        UncheckedIOException e = expectThrows(UncheckedIOException.class, () -> new FileSagaLog(id));
+        assertTrue(e.getMessage().contains("Corrupt saga-log entry"), e.getMessage());
     }
 
     @Test
     public void thatAStringLengthBeyondTheRecordIsACorruptEntry() throws Exception {
-        FileSagaLogId id = id("big");
-        try (FileSagaLog log = new FileSagaLog(id)) {
-            log.write(start("e1")).join();
-            overwriteInt(id.getPath(), FIRST_ELEMENT + 1 + 8, 1_000_000);
-            UncheckedIOException e = expectThrows(UncheckedIOException.class, () -> log.readIncompleteSagas().toList());
-            assertTrue(e.getCause().getMessage().contains("length"), String.valueOf(e.getCause()));
-        }
+        FileSagaLogId id = closedLogWithOneEntry("big");
+        overwriteInt(id.getPath(), FIRST_ELEMENT + 1 + 8, 1_000_000);
+        UncheckedIOException e = expectThrows(UncheckedIOException.class, () -> new FileSagaLog(id));
+        assertTrue(e.getCause().getMessage().contains("length"), String.valueOf(e.getCause()));
     }
 
     @Test
     public void thatAnUnknownEntryTypeIsACorruptEntry() throws Exception {
-        FileSagaLogId id = id("type");
-        try (FileSagaLog log = new FileSagaLog(id)) {
-            log.write(start("e1")).join();
-            // version, id, then "e1" (length and 2 bytes), then the entry type's length and its first byte
-            try (RandomAccessFile raf = new RandomAccessFile(id.getPath().toFile(), "rw")) {
-                raf.seek(FIRST_ELEMENT + 1 + 8 + 4 + 2 + 4);
-                raf.writeByte('X');
-            }
-            UncheckedIOException e = expectThrows(UncheckedIOException.class, () -> log.readIncompleteSagas().toList());
-            assertTrue(e.getMessage().contains("Corrupt saga-log entry"), e.getMessage());
+        FileSagaLogId id = closedLogWithOneEntry("type");
+        // version, id, then "e1" (length and 2 bytes), then the entry type's length and its first byte
+        try (RandomAccessFile raf = new RandomAccessFile(id.getPath().toFile(), "rw")) {
+            raf.seek(FIRST_ELEMENT + 1 + 8 + 4 + 2 + 4);
+            raf.writeByte('X');
         }
+        UncheckedIOException e = expectThrows(UncheckedIOException.class, () -> new FileSagaLog(id));
+        assertTrue(e.getMessage().contains("Corrupt saga-log entry"), e.getMessage());
     }
 
     // sf-6: close is idempotent; use after close is a clear failure

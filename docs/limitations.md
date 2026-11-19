@@ -89,7 +89,7 @@ and `AbortPolicy`, a saga the pool cannot take fails at once with `RejectedExecu
 ## Saga-log providers
 
 - **File log**: one process per log file (it is locked), and logs written before 2.1.0 cannot be read. The file
-  shrinks only when it becomes empty, and every read and recovery reads the whole file. See
+  shrinks only when it becomes empty, and an open log keeps its entries in memory. See
   [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
 - **PostgreSQL log**: each open log holds a connection, so the connection pool must be larger than the number of logs
   open at once. See [sagalog-postgres](modules/sagalog-postgres.md#connections).

@@ -11,7 +11,6 @@ import no.cantara.sagalog.file.queue.QueueFile;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -23,6 +22,10 @@ import java.util.stream.Stream;
  * A saga log in one queue file. Writes, truncates, reads and {@link #close()} of one log are serialised by the queue
  * file's monitor. {@code write} and {@code truncate} report every failure through the returned future; the reads
  * throw.
+ * <p>
+ * The file is read once, when the log is opened; the decoded entries are kept in memory, and reads and truncates use
+ * them. Only this open log can change the file, so the copy stays exact. Memory use follows the log's size, which
+ * stays small when finished executions are truncated.
  */
 class FileSagaLog implements SagaLog, AutoCloseable {
 
@@ -33,6 +36,12 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     private final FileSagaLogLock lock;
 
     // guarded by queueFile
+    /**
+     * The entries in the file, in file order, decoded once. Only this open log can change the file (the lock and the
+     * process-wide registry guarantee one open log per file), so reads and truncates use this copy instead of reading
+     * the file. It changes only after the file has.
+     */
+    private final ArrayList<SagaLogEntry> entries = new ArrayList<>();
     private long nextId;
     private long persistedNextId;
     private boolean closed;
@@ -59,7 +68,9 @@ class FileSagaLog implements SagaLog, AutoCloseable {
             // continue after the highest id in the file, and after every id handed out before the log was emptied
             long maxId = -1;
             for (byte[] bytes : file) {
-                maxId = Math.max(maxId, codec.readId(bytes));
+                SagaLogEntry entry = codec.deserialize(bytes);
+                entries.add(entry);
+                maxId = Math.max(maxId, ((FileSagaLogEntryId) entry.getId()).id());
             }
             long kept = fileLock.readNextId();
             this.nextId = Math.max(maxId + 1, kept);
@@ -116,7 +127,14 @@ class FileSagaLog implements SagaLog, AutoCloseable {
                     builder.id(new FileSagaLogEntryId(nextId));
                 }
                 SagaLogEntry entry = builder.build();
-                queueFile.add(codec.serialize(entry));
+                byte[] record = codec.serialize(entry);
+                try {
+                    queueFile.add(record);
+                } catch (Exception e) {
+                    reloadAfterFailure(e);
+                    throw e;
+                }
+                entries.add(entry);
                 nextId = Math.max(nextId, ((FileSagaLogEntryId) entry.getId()).id() + 1);
                 return CompletableFuture.completedFuture(entry);
             } catch (Exception e) {
@@ -135,16 +153,24 @@ class FileSagaLog implements SagaLog, AutoCloseable {
                 }
                 long target = fileId.id();
                 int n = 0;
-                for (byte[] bytes : queueFile) {
+                int size = entries.size();
+                while (n < size && ((FileSagaLogEntryId) entries.get(n).getId()).id() != target) {
                     n++;
-                    if (codec.readId(bytes) == target) {
-                        if (n == queueFile.size()) {
-                            persistNextId(); // the log becomes empty
-                        }
-                        queueFile.remove(n);
-                        break;
-                    }
                 }
+                if (n == size) {
+                    return CompletableFuture.completedFuture(null); // no entry with this id
+                }
+                int count = n + 1;
+                if (count == size) {
+                    persistNextId(); // the log becomes empty
+                }
+                try {
+                    queueFile.remove(count);
+                } catch (Exception e) {
+                    reloadAfterFailure(e);
+                    throw e;
+                }
+                entries.subList(0, count).clear();
                 return CompletableFuture.completedFuture(null);
             } catch (Exception e) {
                 return CompletableFuture.failedFuture(translate("Cannot truncate saga-log ", e));
@@ -158,11 +184,36 @@ class FileSagaLog implements SagaLog, AutoCloseable {
             try {
                 checkOpen();
                 persistNextId();
-                queueFile.clear();
+                try {
+                    queueFile.clear();
+                } catch (Exception e) {
+                    reloadAfterFailure(e);
+                    throw e;
+                }
+                entries.clear();
                 return CompletableFuture.completedFuture(null);
             } catch (Exception e) {
                 return CompletableFuture.failedFuture(translate("Cannot truncate saga-log ", e));
             }
+        }
+    }
+
+    /**
+     * After a failed change of the file, the in-memory copy may no longer match it: read the file again. If that fails
+     * too, the log can't be trusted, and it is closed (the caller must open it again).
+     */
+    private void reloadAfterFailure(Exception primary) {
+        try {
+            ArrayList<SagaLogEntry> reloaded = new ArrayList<>(queueFile.size());
+            for (byte[] bytes : queueFile) {
+                reloaded.add(codec.deserialize(bytes));
+            }
+            entries.clear();
+            entries.addAll(reloaded);
+        } catch (Exception e) {
+            primary.addSuppressed(e);
+            closed = true;
+            entries.clear();
         }
     }
 
@@ -177,43 +228,43 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     }
 
     /**
+     * Reads the in-memory copy; no file I/O.
+     *
      * @throws IllegalStateException if the log is closed
-     * @throws UncheckedIOException  if the log cannot be read
      */
     @Override
     public Stream<SagaLogEntry> readIncompleteSagas() {
-        return readAll().stream().map(codec::deserialize);
+        return snapshot().stream();
     }
 
     /**
+     * Reads the in-memory copy; no file I/O.
+     *
      * @throws IllegalStateException if the log is closed
-     * @throws UncheckedIOException  if the log cannot be read
      */
     @Override
     public Stream<SagaLogEntry> readEntries(String executionId) {
-        byte[] wanted = executionId.getBytes(StandardCharsets.UTF_8);
-        return readAll().stream()
-                .filter(bytes -> codec.mayHaveExecutionId(bytes, wanted))
-                .map(codec::deserialize)
-                .filter(entry -> executionId.equals(entry.getExecutionId()));
+        List<SagaLogEntry> matching = new ArrayList<>();
+        synchronized (queueFile) {
+            checkOpen();
+            for (int i = 0, size = entries.size(); i < size; i++) {
+                SagaLogEntry entry = entries.get(i);
+                if (executionId.equals(entry.getExecutionId())) {
+                    matching.add(entry);
+                }
+            }
+        }
+        return matching.stream();
     }
 
     /**
-     * Copies every element under the monitor; they are decoded after it is released.
+     * A copy of the entries, taken under the monitor; entries are immutable, so only the references are copied.
      */
-    private List<byte[]> readAll() {
-        List<byte[]> list = new ArrayList<>();
+    private List<SagaLogEntry> snapshot() {
         synchronized (queueFile) {
             checkOpen();
-            try {
-                for (byte[] bytes : queueFile) {
-                    list.add(bytes);
-                }
-            } catch (Exception e) {
-                throw translate("Cannot read saga-log ", e);
-            }
+            return new ArrayList<>(entries);
         }
-        return list;
     }
 
     private void checkOpen() {
@@ -269,6 +320,8 @@ class FileSagaLog implements SagaLog, AutoCloseable {
                 return;
             }
             closed = true;
+            entries.clear();
+            entries.trimToSize();
             try {
                 queueFile.close();
             } catch (Throwable t) {
