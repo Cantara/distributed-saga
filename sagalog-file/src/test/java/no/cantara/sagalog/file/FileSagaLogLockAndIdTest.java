@@ -113,7 +113,7 @@ public class FileSagaLogLockAndIdTest {
     @Test
     public void thatALogInTheOldFormatIsRefused() throws Exception {
         no.cantara.sagalog.file.queue.QueueFile old = new no.cantara.sagalog.file.queue.QueueFile.Builder(logId.getPath().toFile()).build();
-        old.add("0 exec Start S saga {}".getBytes(java.nio.charset.StandardCharsets.UTF_8)); // the format before 2.0.1
+        old.add("0 exec Start S saga {}".getBytes(java.nio.charset.StandardCharsets.UTF_8)); // the format before 2.1.0
         old.close();
         IllegalStateException e = expectThrows(IllegalStateException.class, () -> new FileSagaLog(logId));
         assertTrue(e.getMessage().contains("unsupported format"), e.getMessage());

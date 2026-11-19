@@ -234,7 +234,7 @@ public class FileSagaLog implements SagaLog, AutoCloseable {
             byte version = in.readByte();
             if (version != FORMAT_VERSION) {
                 throw new IllegalStateException(String.format("Saga-log %s holds an entry in an unsupported format "
-                        + "(version byte %d, expected %d). Logs written before 2.0.1 cannot be read: let their sagas "
+                        + "(version byte %d, expected %d). Logs written before 2.1.0 cannot be read: let their sagas "
                         + "finish with the old version, or delete the log file.", sagaLogId.getPath(), version, FORMAT_VERSION));
             }
             SagaLogEntryBuilder builder = builder();

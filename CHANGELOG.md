@@ -1,13 +1,13 @@
 # Changelog
 
-## 2.0.1 (unreleased)
+## 2.1.0 (2026-11-19)
 
 ### Breaking changes and how to migrate
 
 - **The file saga log has a new entry format.** Each entry is a versioned binary record with length-prefixed fields,
   so any text is stored as it is: data that is not a JSON object, spaces in ids and names, empty strings, `null` and
   large data. Before, data not starting with `{` was read back as `null`, a space in an execution id made the log
-  unreadable, and a saga name stored without data lost its last character. **Migration:** logs written before 2.0.1
+  unreadable, and a saga name stored without data lost its last character. **Migration:** logs written before 2.1.0
   cannot be read (opening one fails with `IllegalStateException`, "unsupported format"): let their sagas finish with
   the old version, or delete the log files, before upgrading.
 - **`delete(logId)` on the PostgreSQL saga log drops the log's table and its row in `Locks`**, holding the log's
