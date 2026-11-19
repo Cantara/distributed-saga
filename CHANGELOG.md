@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.1 (2026-11-20)
 
 Fixes and changes from the module design review of 2026-11-19. Each entry names its finding id.
 
