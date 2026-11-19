@@ -44,10 +44,11 @@ SagaLogPool pool = initializer.initialize(Map.of(
   entry is removed: by `truncate()`, or by `truncate(id)` of the last entry. A log that is never emptied (no truncation,
   or `truncate(id)` with a saga always in flight) stays at its peak size. Truncate with `truncate()` once a saga ends,
   as the engine's `onComplete` pattern does.
-- **Reads cost the whole file.** Opening a log, `readIncompleteSagas`, `readEntries` and `truncate(id)` each read every
-  element, holding the log's monitor while the bytes are copied (a write to the same log waits). Opening and
-  `truncate(id)` decode only the ids, and `readEntries` decodes only the entries of its execution. A recovery of one
-  log with *k* unfinished executions reads the file *k + 2* times. With the documented pattern the log stays small.
+- **The file is read once, when the log is opened.** Opening decodes every entry and keeps them in memory; after
+  that, `readIncompleteSagas`, `readEntries` and `truncate(id)` use the in-memory copy and do no file I/O. Only the
+  open log can change its file (it holds the lock), so the copy stays exact; if a write or truncate fails, the log
+  reads the file again, and closes itself if that fails too. Memory follows the log's size; with the documented
+  pattern the log stays small. A corrupt file is reported when the log is opened.
 
 ## Failures
 

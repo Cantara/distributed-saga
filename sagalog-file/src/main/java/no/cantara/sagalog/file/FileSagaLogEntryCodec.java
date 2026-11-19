@@ -10,10 +10,8 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.Arrays;
 
 /**
  * An entry as one queue element: the format version, the id, then executionId, entry type, nodeId, sagaName and
@@ -29,7 +27,6 @@ final class FileSagaLogEntryCodec {
     /**
      * The version byte and the id.
      */
-    private static final int ID_END = 1 + 8;
 
     private final Path path;
 
@@ -77,38 +74,6 @@ final class FileSagaLogEntryCodec {
         } catch (IOException e) {
             throw new UncheckedIOException("Corrupt saga-log entry in " + path, e);
         }
-    }
-
-    /**
-     * Reads only the id of a record.
-     *
-     * @throws IllegalStateException if the record is in another format version
-     * @throws UncheckedIOException  if the record is too short to hold an id
-     */
-    long readId(byte[] bytes) {
-        checkVersion(bytes);
-        if (bytes.length < ID_END) {
-            throw new UncheckedIOException("Corrupt saga-log entry in " + path, new IOException("Record too short for an id: " + bytes.length + " bytes"));
-        }
-        return ByteBuffer.wrap(bytes, 1, 8).getLong();
-    }
-
-    /**
-     * Whether the record may belong to the execution, read without decoding the record. A record whose execution id
-     * cannot be read this way answers true, so that {@link #deserialize(byte[])} reports it.
-     *
-     * @param executionId the execution id as UTF-8
-     */
-    boolean mayHaveExecutionId(byte[] bytes, byte[] executionId) {
-        if (bytes.length < ID_END + 4 || bytes[0] != FORMAT_VERSION) {
-            return true;
-        }
-        int length = ByteBuffer.wrap(bytes, ID_END, 4).getInt();
-        int start = ID_END + 4;
-        if (length < 0 || length > bytes.length - start) {
-            return true; // null (never this execution) or corrupt: let deserialize decide
-        }
-        return Arrays.equals(bytes, start, start + length, executionId, 0, executionId.length);
     }
 
     private void checkVersion(byte[] bytes) {

@@ -258,9 +258,11 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
 - **`SagaSerializer` throws `UncheckedIOException` when the `Writer` fails (ss-2),** with a message that names the saga
   or node. Before, it threw a bare `RuntimeException`; both are unchecked and keep the `IOException` as the cause.
 - **`FutureSelector` documents its threading contract (fs-2):** any thread may add, one thread selects.
-- **File saga log: fewer bytes decoded per read** (sf-11). Opening a log and `truncate(id)` decode only each entry's
-  id, and `readEntries` decodes only its execution's entries. The docs now say that the file shrinks only when it
-  becomes empty and that every read and recovery reads the whole file.
+- **File saga log: the file is read once, when the log is opened** (sf-11). The open log keeps its decoded entries in
+  memory, and `readIncompleteSagas`, `readEntries` and `truncate(id)` use them with no file I/O. Before, each of them
+  read the whole file under the log's monitor, so a recovery of *k* executions read it *k + 2* times. A corrupt file
+  is now reported when the log is opened, not at the first read. Memory follows the log's size. The file format is
+  unchanged.
 - **File saga log: internal structure** (sf-15, sf-16). The entry id is a record (its `toString` is now
   `FileSagaLogEntryId[id=...]`), the record codec is its own class, and the lock is its own class. The module no
   longer `opens` its package. New tests: two-process tests of the lock and `delete`, failure paths, close twice,
