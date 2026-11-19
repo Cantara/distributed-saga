@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+Fixes and changes from the module design review of 2026-11-19. Each entry names its finding id.
+
+### Breaking changes and how to migrate
+
+### Fixed
+
+### Changed
+
 ## 2.1.0 (2026-11-19)
 
 ### Breaking changes and how to migrate
