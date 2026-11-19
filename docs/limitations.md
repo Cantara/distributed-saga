@@ -44,6 +44,10 @@ rollback.
 There are no timeouts on actions, compensating actions, or the saga as a whole. An action that never returns holds its
 thread and its saga. Put timeouts inside your actions.
 
+The PostgreSQL saga log's database calls are bounded only by the timeouts the application configures (socket timeout,
+`statement_timeout`, `lock_timeout`, the pool's connection timeout); by default, as in the JDBC driver, there are
+none. See [sagalog-postgres](modules/sagalog-postgres.md#timeouts-and-tls).
+
 ## Saga-log providers
 
 - **File log**: one process per log file (it is locked), and logs written before 2.1.0 cannot be read. See [sagalog-file](modules/sagalog-file.md#behaviour-to-know).

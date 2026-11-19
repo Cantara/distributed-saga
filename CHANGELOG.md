@@ -6,6 +6,35 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
 
 ### Breaking changes and how to migrate
 
+- **sp-6: the PostgreSQL saga log refuses names that are not plain identifiers, and table names over 63 bytes.**
+  `cluster.owner` must be letters, digits, `_` and `-`; `cluster.name` and `cluster.instance-id` letters, digits and
+  `-`; log names letters, digits and `_ . : $ -`; the schema and the table name `SAGALOG_<name>_<instance>_<log>` at
+  most 63 bytes. Before, any character was accepted and put into SQL with a `"` unescaped (a crafted log name could run
+  SQL), and PostgreSQL silently truncated longer table names, so two logs could share one table. Ids are refused with
+  `IllegalArgumentException` when made; `clusterWideLogIds()` skips such tables with a warning. **Migration:** rename
+  logs whose names break these rules (or whose table names were truncated) before upgrading; with the default
+  `cluster.name` (`internal-sagalog-integration-testing`, 36 characters) a log name can have at most 15 characters.
+- **sp-1: a PostgreSQL saga log that another process took over after its connection was lost fails with
+  `SagaLogBusyException`**, and so does every later operation on it. Before, the log took the advisory lock back on a
+  new connection and wrote on, on top of what the other process had done (for example after a recovery pass had
+  truncated it). **Migration:** on `SagaLogBusyException` from an open log, remove it from the pool and connect it
+  again, which reads the log afresh. A process on 2.1.0 or earlier does not take part in this check: during a rolling
+  upgrade, a log taken over by an old process is not detected.
+- **sp-4: the PostgreSQL saga log's `write` and `truncate` run on the calling thread** and return a future that is
+  already complete. Before, they ran on the JVM's common `ForkJoinPool`, where writes waiting on the database blocked
+  every other user of that pool. **Migration:** a caller that relied on `write` returning before the database answered
+  now waits for it; run the call on your own executor if you need that.
+- **sp-7: the PostgreSQL saga log's failures have types.** Using a closed log throws `IllegalStateException`; a
+  database failure throws the new `no.cantara.sagalog.postgres.PostgresSagaLogException`, whose message names the
+  operation, the log and the SQLState, with the `SQLException` as its cause; `SagaLogBusyException` as before. Before,
+  all were a bare `RuntimeException` (wrapping the `SQLException` once more). The module now exports
+  `no.cantara.sagalog.postgres` so the exception can be caught by type. **Migration:** code that caught
+  `RuntimeException` still catches them; code that looked at `getCause().getCause()` for the driver's exception finds
+  it at `getCause()`.
+- **sp-13: `h2.enabled` (and `h2.driver.url`) is removed from the PostgreSQL saga log.** It could not work: H2 has no
+  advisory locks. **Migration:** remove the keys; use PostgreSQL.
+- **sp-16: `HikariPostgresDataSource`, `PostgresDataSource` and `PostgresSagaTools` are no longer public**; they were
+  internal. **Migration:** none known; nothing outside the module used them.
 - **sl-6: a shut-down saga-log pool refuses new work.** After `SagaLogPool.shutdown()`, `connect`, `tryAcquire` and
   `tryTakeOwnership` throw `SagaPoolShutdownException`, and a connect in progress during shutdown closes its log and
   throws it too. Before, the pool opened logs (connections, locks) again after shutdown. **Migration:** shut the pool
@@ -37,6 +66,24 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
 
 ### Fixed
 
+- **sp-2: the PostgreSQL saga log retries the statement that meets a lost connection.** Every operation wrapped its
+  `SQLException` before the retry could see it, so the first operation after a lost connection failed, and only the
+  next one reconnected. Now an operation whose statement or commit fails because the connection is gone (SQLState
+  class `08`, `57P01` to `57P03`) reconnects, takes the lock back (sp-1) and runs once more. Other failures are no
+  longer retried (before, a failed commit of any kind was).
+- **sp-3: closing a PostgreSQL saga log leaves no advisory lock on a pooled connection.** A reconnect waited with
+  `Object.wait`, which let a second operation take the lock a second time on the same session; `close()` unlocked once
+  and gave the connection, still holding the lock, back to the pool, so no process could open the log until the
+  connection was retired. The reconnect now waits holding the log, and `close()` and `delete` release with
+  `pg_advisory_unlock_all()`, evicting the connection if that fails.
+- **sp-8: a PostgreSQL write whose commit succeeded but whose reply was lost succeeds.** Its retry met its own row and
+  failed on the primary key, so a durable write was reported as failed. The insert is now
+  `ON CONFLICT (entry_id, txid) DO NOTHING`, and finding the same entry stored counts as success.
+- **sp-14: two processes that open the same new PostgreSQL log at once** get the log and `SagaLogBusyException`; the
+  loser got a duplicate-key `RuntimeException` before.
+- **sp-11: `PostgresSagaLogPool.shutdown()` calls `super.shutdown()`**, so the pool's ownerships and logs are cleared
+  and the shut-down state applies (sl-6); it then closes the connection pool, keeping the first failure. The
+  provider's own map of every log ever opened is gone.
 - **sl-1: `SagaLogPool.shutdown()` closes every log.** Before, it stopped at the first log that failed to close, left the
   others open (connections, file and advisory locks) and the pool not cleared. Now every log is closed, the pool is
   cleared either way, and the first failure is thrown with later ones added as suppressed.
@@ -62,6 +109,23 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
 
 ### Changed
 
+- **sp-5, sp-13: timeouts and TLS for the PostgreSQL saga log are configurable** with new keys:
+  `postgres.statement-timeout`, `postgres.lock-timeout`, `postgres.driver.socket-timeout`,
+  `postgres.driver.tcp-keep-alive`, `postgres.driver.sslmode`, `postgres.driver.sslrootcert`,
+  `connection-pool.connection-timeout`, and `postgres.driver.property.<name>` for any other driver property. The
+  defaults are the driver's own (no timeouts, no keepalive, `sslmode=prefer`), so nothing changes unless the
+  application sets them; [sagalog-postgres](docs/modules/sagalog-postgres.md#timeouts-and-tls) recommends values.
+- **sp-1: the PostgreSQL `Locks` table has a new column, `owner_token bigint NOT NULL DEFAULT 0`.** `initialize` adds
+  it to a table made by 2.1.0 or earlier, only if it is missing; the rows and keys are kept. 2.1.0 processes can run
+  against the migrated table.
+- **sp-10: each PostgreSQL log table has an index on `(txid, entry_id)`** for `readEntries(executionId)`, which scanned
+  and sorted the whole table before. It is created when a log is opened, also on tables made by earlier versions; on a
+  large table that first open waits for the index to be built.
+- **sp-9, sp-12, sp-15, sp-16, sp-17:** the PostgreSQL log is split into `LogSession` (connection, lock, retry),
+  `LockRegistry` (the `Locks` table) and the entry SQL; the test hook `failOnXAttempts` is gone in favour of fault
+  tests with `pg_terminate_backend`, a second process and a locked table (fm-3, `PostgresSagaLogFaultTest`); logging
+  uses placeholders and no longer logs and rethrows; `module-info` drops `requires java.logging` and the unused `init`
+  package; `PostgresSagaLogId.compareTo` no longer overflows; switch expressions and text blocks.
 - **sl-2: `connect` no longer runs the provider's connect inside a `ConcurrentHashMap` lock.** One connect runs per log
   id; callers for the same id wait for it and get the same log, and callers for other ids no longer wait behind it.
   A failed connect leaves nothing in the pool, as before.

@@ -48,14 +48,15 @@ Every library module is a named Java module with a `module-info.java`.
 | `no.cantara.saga.execution` | `no.cantara.saga.execution`, `...execution.adapter` | `transitive` saga-api, sagalog, futureselector | uses `SagaLogInitializer` |
 | `no.cantara.saga.serialization` | `no.cantara.saga.serialization` | `transitive` saga-api; `org.json` | |
 | `no.cantara.sagalog.file` | nothing | `no.cantara.sagalog` | provides `SagaLogInitializer` (file log) |
-| `no.cantara.sagalog.postgres` | nothing | `no.cantara.sagalog`, `java.sql`, `com.zaxxer.hikari`, `org.postgresql.jdbc`, `org.slf4j` | provides `SagaLogInitializer` (PostgreSQL log) |
+| `no.cantara.sagalog.postgres` | `no.cantara.sagalog.postgres` (the initializer and `PostgresSagaLogException`) | `transitive` sagalog; `java.sql`, `com.zaxxer.hikari`, `org.postgresql.jdbc`, `org.slf4j` | provides `SagaLogInitializer` (PostgreSQL log) |
 
 Notes:
 
 - `requires transitive` means a module that requires `no.cantara.saga.execution` can use `Saga`, `SagaLog` and
   `SelectableFuture` without requiring their modules itself.
-- The provider modules export nothing. An application reaches them only through `ServiceLoader` and the
-  `SagaLogInitializer` interface (see below). Their packages are `opens`, for reflection.
+- The provider modules export nothing an application needs to call: it reaches them through `ServiceLoader` and the
+  `SagaLogInitializer` interface (see below). `sagalog-postgres` exports its package only so that
+  `PostgresSagaLogException` can be caught by type. Their packages are `opens`, for reflection.
 - `org.postgresql.jdbc` is an automatic module: the PostgreSQL driver has no module descriptor, but it declares that
   name in its manifest. Every other dependency is a named module.
 - The libraries also work on the class path.
@@ -77,7 +78,7 @@ SagaLogPool pool = initializer.initialize(configuration);
 |---|---|---|
 | `no.cantara.sagalog.memory.MemorySagaLogInitializer` | `sagalog-api` | `cluster.instance-id` |
 | `no.cantara.sagalog.file.FileSagaLogInitializer` | `sagalog-file` | `filesagalog.folder`, `cluster.instance-id` |
-| `no.cantara.sagalog.postgres.PostgresSagaLogInitializer` | `sagalog-postgres` | `cluster.owner`, `cluster.name`, `cluster.instance-id`, `postgres.driver.*`, `connection-pool.max-size` |
+| `no.cantara.sagalog.postgres.PostgresSagaLogInitializer` | `sagalog-postgres` | `cluster.owner`, `cluster.name`, `cluster.instance-id`, `postgres.driver.*`, `postgres.statement-timeout`, `postgres.lock-timeout`, `connection-pool.*` |
 
 `configurationOptionsAndDefaults()` on each initializer returns its keys with example values. In a modular
 application, the module that calls `ServiceLoader.load` must declare `uses no.cantara.sagalog.SagaLogInitializer`.
