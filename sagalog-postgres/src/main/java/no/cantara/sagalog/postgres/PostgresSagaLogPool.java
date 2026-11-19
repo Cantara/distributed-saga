@@ -12,11 +12,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.LinkedHashSet;
-import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 class PostgresSagaLogPool extends AbstractSagaLogPool {
 
@@ -27,15 +26,20 @@ class PostgresSagaLogPool extends AbstractSagaLogPool {
     final String schema;
     final String namespace;
     final String clusterInstanceId;
-    final Map<SagaLogId, SagaLog> connectedLocalLogBySagaLogId = new ConcurrentHashMap<>();
+    final Duration relockWait;
 
     PostgresSagaLogPool(PostgresDataSource dataSource, String schema, String namespace, String clusterInstanceId) {
+        this(dataSource, schema, namespace, clusterInstanceId, LogSession.DEFAULT_RELOCK_WAIT);
+    }
+
+    PostgresSagaLogPool(PostgresDataSource dataSource, String schema, String namespace, String clusterInstanceId, Duration relockWait) {
         super(clusterInstanceId);
-        new PostgresSagaLogId(schema, namespace, clusterInstanceId, "configuration-validation"); // valid if no exception is thrown
+        new PostgresSagaLogId(schema, namespace, clusterInstanceId, "x"); // valid if no exception is thrown
         this.dataSource = dataSource;
         this.schema = schema;
         this.namespace = namespace;
         this.clusterInstanceId = clusterInstanceId;
+        this.relockWait = relockWait;
     }
 
     @Override
@@ -43,11 +47,14 @@ class PostgresSagaLogPool extends AbstractSagaLogPool {
         return new PostgresSagaLogId(schema, namespace, clusterInstanceId, logName);
     }
 
+    /**
+     * Lists the logs of this namespace in the schema. A table whose name is not a valid saga-log id is skipped with a
+     * warning.
+     */
     @Override
     public Set<SagaLogId> clusterWideLogIds() {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
-            connection.beginRequest();
             try (PreparedStatement ps = connection.prepareStatement("SELECT tablename FROM pg_tables WHERE schemaname = ? AND left(tablename, length(?)) = ?")) {
                 ps.setString(1, schema);
                 String tableNamePrefix = "SAGALOG_" + namespace + "_";
@@ -57,111 +64,124 @@ class PostgresSagaLogPool extends AbstractSagaLogPool {
                     Set<SagaLogId> logIds = new LinkedHashSet<>();
                     while (rs.next()) {
                         String tableName = rs.getString(1);
-                        PostgresSagaLogId sagaLogId = new PostgresSagaLogId(schema, tableName);
-                        logIds.add(sagaLogId);
+                        try {
+                            logIds.add(new PostgresSagaLogId(schema, tableName));
+                        } catch (IllegalArgumentException e) {
+                            LOG.warn("Skipping table \"{}\".\"{}\": not a saga log ({})", schema, tableName, e.getMessage());
+                        }
                     }
                     return logIds;
                 }
-            } finally {
-                connection.endRequest();
             }
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            throw new PostgresSagaLogException("clusterWideLogIds", "schema " + schema, e);
         }
     }
 
     @Override
     protected SagaLog connectExternal(SagaLogId logId) throws SagaLogBusyException {
-        // a log closed by remove(logId) is opened again, not handed out closed
-        return connectedLocalLogBySagaLogId.compute(logId, (id, existing) ->
-                existing != null && !((PostgresSagaLog) existing).closed.get() ? existing : new PostgresSagaLog(dataSource, id, random, 0));
+        return new PostgresSagaLog(dataSource, logId, random, relockWait);
     }
 
     /**
      * Drops the log's table and its row in the Locks table, holding the log's advisory lock while doing so.
      *
      * @return true if the table existed
-     * @throws SagaLogBusyException if another process holds the log
+     * @throws SagaLogBusyException     if another process holds the log
+     * @throws PostgresSagaLogException if the database fails
      */
     @Override
     protected boolean deleteExternal(SagaLogId logId) {
-        SagaLog sagaLog = connectedLocalLogBySagaLogId.remove(logId);
-        if (sagaLog != null) {
-            try {
-                sagaLog.close();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
         PostgresSagaLogId id = (PostgresSagaLogId) logId;
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(true);
-            Long lockKey = null;
-            try (PreparedStatement ps = connection.prepareStatement(String.format(
-                    "SELECT lock_key FROM \"%s\".\"Locks\" WHERE namespace = ? AND instance_id = ? AND log_id = ?", id.getSchema()))) {
-                ps.setString(1, id.getNamespace());
-                ps.setString(2, id.getClusterInstanceId());
-                ps.setString(3, id.getLogName());
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
-                        lockKey = rs.getLong(1);
-                    }
-                }
-            }
-            if (lockKey != null && !advisoryLock(connection, "pg_try_advisory_lock", lockKey)) {
+        String resource = "saga log " + id.getSchema() + "." + id.getTableName();
+        Connection connection;
+        try {
+            connection = dataSource.getConnection();
+        } catch (SQLException e) {
+            throw new PostgresSagaLogException("delete", resource, e);
+        }
+        RuntimeException failure = null;
+        try {
+            connection.setAutoCommit(false);
+            Long lockKey = LockRegistry.findKey(connection, id);
+            if (lockKey != null && !LockRegistry.tryLock(connection, lockKey)) {
                 throw new SagaLogBusyException("Saga-log is in use by another process and cannot be deleted: " + logId);
             }
-            try {
-                boolean existed;
-                try (PreparedStatement ps = connection.prepareStatement(
-                        "SELECT 1 FROM pg_tables WHERE schemaname = ? AND tablename = ?")) {
-                    ps.setString(1, id.getSchema());
-                    ps.setString(2, id.getTableName());
-                    try (ResultSet rs = ps.executeQuery()) {
-                        existed = rs.next();
-                    }
-                }
-                try (Statement st = connection.createStatement()) {
-                    st.executeUpdate(String.format("DROP TABLE IF EXISTS \"%s\".\"%s\"", id.getSchema(), id.getTableName()));
-                }
-                try (PreparedStatement ps = connection.prepareStatement(String.format(
-                        "DELETE FROM \"%s\".\"Locks\" WHERE namespace = ? AND instance_id = ? AND log_id = ?", id.getSchema()))) {
-                    ps.setString(1, id.getNamespace());
-                    ps.setString(2, id.getClusterInstanceId());
-                    ps.setString(3, id.getLogName());
-                    ps.executeUpdate();
-                }
-                return existed;
-            } finally {
-                if (lockKey != null) {
-                    advisoryLock(connection, "pg_advisory_unlock", lockKey);
+            boolean existed;
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT 1 FROM pg_tables WHERE schemaname = ? AND tablename = ?")) {
+                ps.setString(1, id.getSchema());
+                ps.setString(2, id.getTableName());
+                try (ResultSet rs = ps.executeQuery()) {
+                    existed = rs.next();
                 }
             }
+            try (Statement st = connection.createStatement()) {
+                st.executeUpdate("DROP TABLE IF EXISTS " + id.qualifiedTableName());
+            }
+            LockRegistry.delete(connection, id);
+            connection.commit();
+            return existed;
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            failure = new PostgresSagaLogException("delete", resource, e);
+            throw failure;
+        } catch (RuntimeException e) {
+            failure = e;
+            throw e;
+        } finally {
+            release(connection, resource, failure);
         }
     }
 
-    private static boolean advisoryLock(Connection connection, String function, long key) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement("SELECT " + function + "(?)")) {
-            ps.setLong(1, key);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() && rs.getBoolean(1);
+    /**
+     * Gives the connection back with no advisory lock and no transaction on it, or evicts it if that fails.
+     */
+    private void release(Connection connection, String resource, RuntimeException failure) {
+        try {
+            connection.rollback();
+            LockRegistry.unlockAll(connection);
+            connection.commit();
+        } catch (SQLException | RuntimeException e) {
+            if (failure != null) {
+                failure.addSuppressed(e);
+            } else {
+                LOG.warn("Unable to release the lock of {} cleanly; evicting its connection", resource, e);
             }
+            dataSource.evictConnection(connection);
+            return;
+        }
+        try {
+            connection.close();
+        } catch (SQLException e) {
+            LOG.warn("Unable to give back the connection of {}", resource, e);
         }
     }
 
+    /**
+     * Closes every open log (as the base pool does, which also forgets the ownerships), then the connection pool,
+     * also when closing a log fails.
+     */
     @Override
     public void shutdown() {
         LOG.info("Shutting down {}...", PostgresSagaLogPool.class.getSimpleName());
-        for (Map.Entry<SagaLogId, SagaLog> entry : connectedLocalLogBySagaLogId.entrySet()) {
-            try {
-                entry.getValue().close();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
+        RuntimeException failure = null;
+        try {
+            super.shutdown();
+        } catch (RuntimeException e) {
+            failure = e;
+        }
+        try {
+            dataSource.close();
+        } catch (RuntimeException e) {
+            if (failure == null) {
+                failure = e;
+            } else {
+                failure.addSuppressed(e);
             }
         }
-        dataSource.close();
+        if (failure != null) {
+            throw failure;
+        }
         LOG.info("Shutdown of {} complete", PostgresSagaLogPool.class.getSimpleName());
     }
 }

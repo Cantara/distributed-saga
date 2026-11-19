@@ -6,11 +6,11 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLTransientConnectionException;
 
-public class HikariPostgresDataSource implements PostgresDataSource {
+final class HikariPostgresDataSource implements PostgresDataSource {
 
     private final HikariDataSource hikariDataSource;
 
-    public HikariPostgresDataSource(HikariDataSource hikariDataSource) {
+    HikariPostgresDataSource(HikariDataSource hikariDataSource) {
         this.hikariDataSource = hikariDataSource;
     }
 

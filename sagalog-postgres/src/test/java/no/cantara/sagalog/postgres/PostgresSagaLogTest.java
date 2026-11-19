@@ -59,7 +59,7 @@ public class PostgresSagaLogTest {
 
     @BeforeMethod
     private void createAndCleanPostgresSagaLog() {
-        sagaLog = new PostgresSagaLog(dataSource, SAGA_LOG_ID, new Random(), 1 /* To test re-connect path */);
+        sagaLog = new PostgresSagaLog(dataSource, SAGA_LOG_ID, new Random());
         sagaLog.truncate().join();
     }
 
@@ -172,7 +172,7 @@ public class PostgresSagaLogTest {
 
     @Test
     public void thatATableWithAJsonDataColumnFromBefore200StillWorks() throws SQLException {
-        PostgresSagaLogId oldLogId = new PostgresSagaLogId("sagalog", "internal-sagalog-integration-testing", "01", "the-old-saga-log");
+        PostgresSagaLogId oldLogId = new PostgresSagaLogId("sagalog", "internal-sagalog-integration-testing", "01", "the-old-log");
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(true);
             connection.createStatement().executeUpdate(String.format("DROP TABLE IF EXISTS \"%s\".\"%s\"", oldLogId.getSchema(), oldLogId.getTableName()));
@@ -186,7 +186,7 @@ public class PostgresSagaLogTest {
                     "    PRIMARY KEY (entry_id, txid)\n" +
                     ")", oldLogId.getSchema(), oldLogId.getTableName()));
         }
-        PostgresSagaLog oldLog = new PostgresSagaLog(dataSource, oldLogId, new Random(), 1);
+        PostgresSagaLog oldLog = new PostgresSagaLog(dataSource, oldLogId, new Random());
         try {
             Deque<SagaLogEntry> written = writeSuccessfulVanillaSagaExecutionEntries(oldLog, UUID.randomUUID().toString());
             assertEquals(oldLog.readIncompleteSagas().collect(Collectors.toList()), List.copyOf(written));
