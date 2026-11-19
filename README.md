@@ -28,18 +28,18 @@ The libraries are published to Cantara's Maven repository, not to Maven Central:
     <dependency>
         <groupId>no.cantara.saga</groupId>
         <artifactId>saga-execution</artifactId>       <!-- brings saga-api, sagalog-api and future-selector -->
-        <version>${distributed-saga.version}</version>
+        <version>2.0.0</version>
     </dependency>
     <dependency>
         <groupId>no.cantara.saga</groupId>
         <artifactId>sagalog-postgres</artifactId>     <!-- or sagalog-file; the memory log is in sagalog-api -->
-        <version>${distributed-saga.version}</version>
+        <version>2.0.0</version>
     </dependency>
 </dependencies>
 ```
 
-The current version on `main` is `2.0.0-SNAPSHOT`, which is not published yet: build it with `mvn install` (below).
-The latest published release is 1.0.23 (Java 11); the [CHANGELOG](CHANGELOG.md) lists what changed in 2.0.0.
+The latest release is 2.0.0 (Java 17). If you are upgrading from 1.0.x, the [CHANGELOG](CHANGELOG.md) lists what
+changed and how to migrate.
 
 | Artifact | What it is |
 |---|---|
@@ -108,7 +108,7 @@ mvn clean install
 Try the sample, an HTTP server that runs a saga per request:
 
 ```sh
-java -jar saga-samples/polyglot-persistence/target/polyglot-persistence-2.0.0-SNAPSHOT.jar
+java -jar saga-samples/polyglot-persistence/target/polyglot-persistence-*-SNAPSHOT.jar
 curl -X PUT http://127.0.0.1:8139/any/resource/path -d 'Hello Saga!' | jq .
 ```
 
