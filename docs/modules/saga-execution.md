@@ -76,6 +76,9 @@ With `recovery = true`, the execution reads the log's entries for `executionId` 
 - A node with an `End` entry: the action is not run; the logged output is deserialized and passed on.
 - A node with only a `Start` entry: the action runs again (no second `Start` is written).
 - A node without entries: runs as normal.
+- `Abort`, `Comp` and an `End` on `E` are not looked at. A node with `Start` and `Abort` but no `End` runs again, and an
+  execution that was rolled back (or finished) is run forward again when asked; its new entries are added after the
+  old ones. Applications use this to retry an aborted saga; whether to recover an execution is the caller's choice.
 
 See [Using the library](../using.md#7-recover-unfinished-sagas) for how to find what to recover.
 
