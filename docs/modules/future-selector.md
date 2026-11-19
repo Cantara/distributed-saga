@@ -13,17 +13,18 @@ Note the group id: it differs from the other modules (`no.cantara.saga`).
 
 | Type | Purpose |
 |---|---|
-| `SelectableThreadPoolExectutor` | A `ThreadPoolExecutor` whose `submit` methods return `SelectableFuture`s. Same constructors as `ThreadPoolExecutor`. (The class name is spelled this way.) |
-| `SelectableFuture<V>` | A `CompletableFuture<V>` that is also a `RunnableFuture<V>`, created by the executor around the submitted task. |
+| `SelectableThreadPoolExecutor` | A `ThreadPoolExecutor` whose `submit` methods return `SelectableFuture`s. Same constructors as `ThreadPoolExecutor`. |
+| `SelectableThreadPoolExectutor` | Deprecated: the same executor under its old, misspelled name, a subclass of `SelectableThreadPoolExecutor`. `SagaExecution` still takes this type, so create the pool for it under the old name until `saga-execution` takes the new one. |
+| `SelectableFuture<V>` | A `CompletableFuture<V>` that is also a `RunnableFuture<V>`, created by the executor around the submitted task. Runs its task at most once. |
 | `FutureSelector<F, C>` | Collects selectable futures, each with a *control* value of type `C`, and returns them in completion order. |
-| `Selection<F, C>` | One selected future and its control value (`future`, `control`). |
+| `Selection<F, C>` | One selected future and its control value (`future`, `control`); immutable (both fields are `final`). |
 | `InterruptedRuntimeException`, `ExecutionRuntimeException`, `TimeoutRuntimeException` | Unchecked versions of the JDK's checked exceptions. |
-| `Utils.launder(Throwable)` | Turns a checked exception into one of the unchecked ones above. |
+| `Utils.launder(Throwable)` | Turns a checked exception into one of the unchecked ones above. For an `InterruptedException` it restores the thread's interrupt status. `Utils` holds static methods only and cannot be instantiated. |
 
 ## Using the selector
 
 ```java
-SelectableThreadPoolExectutor pool = new SelectableThreadPoolExectutor(
+SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(
         4, 4, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
 
 FutureSelector<String, String> selector = new FutureSelector<>();
@@ -40,6 +41,13 @@ while (selector.pending()) {
 - `select()` blocks until a registered future is done and returns it. `select(timeout, unit)` returns null on timeout.
 - `pending()` and `moreThanOnePending()` tell whether registered futures remain unselected.
 
+### Threading
+
+- Any thread may `add` a future, at any time.
+- Only **one** thread selects. Two threads that select at the same time can both wait for the last pending future;
+  one gets it, and the other waits for ever. `saga-execution` uses one selector per walk, on one thread.
+- `pending()` and `moreThanOnePending()` are exact only on the selecting thread; on other threads they are a snapshot.
+
 ## Behaviour to know
 
 - A future is selectable when it completes, normally or exceptionally. Check the selected future
@@ -47,5 +55,10 @@ while (selector.pending()) {
   selected, and `select()` waited for ever for it.
 - `select(timeout, unit)` returns null on timeout and selects nothing: `pending()` still counts the future.
 - Cancelling a `SelectableFuture` does not interrupt its running task.
+- A `SelectableFuture` runs its task at most once, like `FutureTask`: a second `run()`, from any thread, does nothing.
+  Up to 2.1.0 a second `run()` ran the task again and dropped its result.
+- A `select` that is interrupted throws `InterruptedRuntimeException`, and the thread stays interrupted, so a pool
+  worker or a loop further up still sees the interrupt. `Utils.launder` restores the interrupt status for every
+  laundered `InterruptedException`. Up to 2.1.0 the status was cleared.
 
 These limits affect `saga-execution`; see [Known limitations](../limitations.md).

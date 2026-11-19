@@ -8,10 +8,22 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/**
+ * A saga definition: a named directed acyclic graph of {@link SagaNode}s from the start node {@value #ID_START} to the
+ * end node {@value #ID_END}, built and validated by {@link #start(String)} ... {@link SagaBuilder#end()}.
+ * <p>
+ * Naming rules, checked by the builder:
+ * <ul>
+ * <li>a saga name may be any string, but not {@code null};</li>
+ * <li>node ids and adapter names are identifiers: they may contain only visible characters ({@code \p{Graph}}: ASCII
+ * letters, digits and punctuation), no whitespace or control characters, and not {@code null}.</li>
+ * </ul>
+ * A built saga is immutable: its name, its nodes and their links never change. It is safe to share between threads,
+ * and one instance can serve every concurrent execution of the saga.
+ */
 public class Saga {
 
     public final static String ID_START = "S";
@@ -24,10 +36,11 @@ public class Saga {
      * Start building a new Saga with a given name. Will create the initial start-node
      * and expects caller to immediately provide link-to targets for the start-node.
      *
-     * @param sagaName the name of the saga to create a builder for.
+     * @param sagaName the name of the saga to create a builder for; any string.
      * @return a builder for the saga.
+     * @throws SagaException if sagaName is null.
      */
-    public static SagaBuilder.OutgoingBuilder start(String sagaName) {
+    public static SagaBuilder.OutgoingBuilder start(String sagaName) throws SagaException {
         return new SagaBuilder(sagaName)
                 .id(ID_START)
                 .adapter(ADAPTER_START);
@@ -61,8 +74,14 @@ public class Saga {
         getEndNode().reverseDepthFirstPreOrderFullTraversal(0, new LinkedHashSet<>(), new LinkedHashSet<>(), visit);
     }
 
+    @Override
+    public String toString() {
+        return "Saga{name='" + name + "', nodes=" + nodeById.size() + "}";
+    }
+
     public static class SagaBuilder {
-        private final static Pattern legalSagaNamePattern = Pattern.compile("[^{\\n]*");
+        // the rule for identifiers (node ids and adapter names): visible characters only, no whitespace or control
+        // characters
         private final static Pattern legalIdPattern = Pattern.compile("\\p{Graph}*");
         private final static Pattern legalAdapterPattern = Pattern.compile("\\p{Graph}*");
 
@@ -70,9 +89,8 @@ public class Saga {
         final HashMap<String, NodeState> nodeStateById = new LinkedHashMap<>();
 
         private SagaBuilder(String sagaName) {
-            Matcher m = legalSagaNamePattern.matcher(sagaName);
-            if (!m.matches()) {
-                throw new SagaException("sagaName must not contain the '{' (left-curly-bracket) or '\\n' (newline) character");
+            if (sagaName == null) {
+                throw new SagaException("sagaName cannot be null");
             }
             this.sagaName = sagaName;
         }
@@ -80,11 +98,15 @@ public class Saga {
         /**
          * Create a new node with the given id.
          *
-         * @param id the node id.
+         * @param id the node id: an identifier of visible characters only, with no whitespace or control characters.
          * @return a builder that expects the action to be declared.
-         * @throws SagaException if the id is already used by another node in this saga.
+         * @throws SagaException if the id is null, has characters that are not allowed, or is already used by another
+         *                       node in this saga.
          */
         public AdapterBuilder id(String id) throws SagaException {
+            if (id == null) {
+                throw new SagaException("id cannot be null");
+            }
             if (!legalIdPattern.matcher(id).matches()) {
                 throw new SagaException("id must only contain visible characters. Whitespace- or control-characters are not allowed. id: " + id);
             }
@@ -98,13 +120,13 @@ public class Saga {
 
         /**
          * End the saga. This will create the end-saga node and then build
-         * and validate the entire saga graph. Validations are performed and
-         * the violations will throw an appropriate SagaException subclass
-         * instance.
+         * and validate the entire saga graph. A violation throws a
+         * {@link SagaException}.
          *
          * @return the Saga representation as an easy-to-use facade over a
-         * directed-acyclic-graph. The saga may be transformed into a json
-         * representation through the Saga.toJson() method.
+         * directed-acyclic-graph. It is immutable and safe to share between
+         * threads. The saga-serialization module turns it into JSON and back
+         * ({@code SagaSerializer.toJson} and {@code SagaDeserializer.fromJson}).
          * @throws SagaException if graph cycles are detected.
          *                       Or if links point to nodes that
          *                       were never created. Or
@@ -159,7 +181,7 @@ public class Saga {
                         outgoingNode = new SagaNode(outgoingNodeState.id, outgoingNodeState.adapter);
                         sagaNodeById.put(outgoingId, outgoingNode);
                     }
-                    sagaNode.outgoing.add(outgoingNode);
+                    sagaNode.addOutgoing(outgoingNode);
                 }
 
                 /*
@@ -173,7 +195,7 @@ public class Saga {
                         incomingNode = new SagaNode(incomingNodeState.id, incomingNodeState.adapter);
                         sagaNodeById.put(incomingId, incomingNode);
                     }
-                    sagaNode.incoming.add(incomingNode);
+                    sagaNode.addIncoming(incomingNode);
                 }
 
                 // sagaNode is complete
@@ -215,10 +237,15 @@ public class Saga {
             /**
              * Declare the adapter to use when executing action or compensating action of this node.
              *
-             * @param adapter the adapter to use.
+             * @param adapter the name of the adapter to use: an identifier of visible characters only, with no
+             *                whitespace or control characters.
              * @return a builder that expects the outgoing links to be declared.
+             * @throws SagaException if the adapter is null or has characters that are not allowed.
              */
-            public OutgoingBuilder adapter(String adapter) {
+            public OutgoingBuilder adapter(String adapter) throws SagaException {
+                if (adapter == null) {
+                    throw new SagaException("adapter cannot be null");
+                }
                 if (!legalAdapterPattern.matcher(adapter).matches()) {
                     throw new SagaException("adapter must only contain visible characters. Whitespace- or control-characters are not allowed. adapter: " + adapter);
                 }
@@ -261,7 +288,8 @@ public class Saga {
              *               nodes linked to may be executed in parallel only after the
              *               action previously specificed in this node has been executed.
              * @return the saga builder ready to create more nodes or to end the saga.
-             * @throws SagaException if linkTo is null or if any of the links are null or empty.
+             * @throws SagaException if linkTo is null, if any of the links are null or empty, or if this node
+             *                       already links to one of them.
              */
             public SagaBuilder linkTo(String... linkTo) throws SagaException {
                 if (linkTo == null) {
@@ -305,7 +333,10 @@ public class Saga {
             return this;
         }
 
-        private NodeState outgoing(String id) {
+        private NodeState outgoing(String id) throws SagaException {
+            if (outgoing.contains(id)) {
+                throw new SagaException("Duplicate link from node(" + this.id + ") to node(" + id + ")");
+            }
             outgoing.add(id);
             return this;
         }

@@ -6,7 +6,6 @@ module no.cantara.saga.samples.polyglot {
     requires no.cantara.saga.serialization;
     requires no.cantara.concurrent.futureselector;
     requires java.base;
-    requires java.net.http;
     requires undertow.core;
     requires org.json;
     requires no.cantara.sagalog;

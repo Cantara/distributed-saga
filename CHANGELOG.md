@@ -17,6 +17,23 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
 - **sl-10: the memory saga log refuses a `null` cluster instance id** with `NullPointerException` when the id is made
   (`idFor(null, name)`). Before, the id was made, and comparing it threw `NullPointerException` later. **Migration:**
   pass a cluster instance id.
+- **A built saga can no longer be changed (sa-1).** `SagaNode.incoming` and `SagaNode.outgoing` are unmodifiable views;
+  a write throws `UnsupportedOperationException`. Before, they were public mutable lists, so a saga that `end()` had
+  validated could be changed afterwards, while it was shared by running executions. The field types
+  (`Collection<SagaNode>`) and reading them are unchanged. **Migration:** build a new saga with the builder instead of
+  changing the links of a built one.
+- **The builder rejects a duplicate link (sa-6).** `linkTo("a", "a")` throws `SagaException` ("Duplicate link from
+  node(x) to node(a)"); before, the target got two incoming entries from the same node. `SagaDeserializer.fromJson`
+  rejects a node whose `outgoing` lists an id twice in the same way. **Migration:** list each target once.
+- **A `null` saga name, node id or adapter throws `SagaException` (sa-4),** as a `null` link already did. Before, it
+  threw `NullPointerException`. **Migration:** catch `SagaException`.
+- **`SagaDeserializer.fromJson` throws `SagaException` for malformed JSON and missing or mistyped fields (ss-1),** with
+  the `org.json.JSONException` as its cause and a message that starts with "De-serialization error". Before, the
+  `JSONException` reached the caller. **Migration:** catch `SagaException` (it already covered graph errors).
+- **`Selection.future` and `Selection.control` are `final` (fs-3).** Reading them is unchanged. **Migration:** code
+  that assigned them must keep its own values instead.
+- **`Utils`, `SagaSerializer` and `SagaDeserializer` cannot be instantiated (fs-5, ss-3):** they have private
+  constructors. **Migration:** call their static methods.
 
 ### Fixed
 
@@ -27,6 +44,21 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
   `release(logId)`), as documented, instead of `NullPointerException`.
 - **sl-4: the `SagaLogEntry.getJsonData()` Javadoc** said the file log drops data that is not a JSON object. Every saga
   log stores the data unchanged, the file log too since 2.1.0.
+- **Laundering an `InterruptedException` keeps the thread interrupted (fs-1).** `Utils.launder` restores the
+  interrupt status before it returns the `InterruptedRuntimeException`, so `FutureSelector.select` and every other
+  caller leave the thread interrupted, as the Java contract asks. Before, the status was cleared, and code further up
+  that caught the runtime exception (a pool worker, a request loop, `shutdownNow`) no longer saw the interrupt. A
+  caller that catches `InterruptedRuntimeException` and then blocks again on the same thread now fails at once;
+  **migration:** call `Thread.interrupted()` first if that thread must go on waiting.
+- **`SelectableFuture.run()` runs its task at most once (fs-6),** like `FutureTask`. Before, a second call ran the task
+  again and dropped the result. The executor calls `run()` once, so only code that ran a future by hand is affected.
+- **The sample's saga-log lifecycle (pp-1, pp-2, pp-3).** The polyglot-persistence sample registered a new log per
+  request thread, never truncated it and never recovered. It now registers a fixed set of logs at start-up, recovers
+  their unfinished sagas before serving, takes a log per request with `tryAcquire(owner, timeout)`, truncates the
+  execution's entries once the saga has finished, and releases the log with the owner-checked
+  `releaseOwnership(owner, logId)` (sl-3). It replies 409 for a rolled-back saga and
+  500 for another failure, with the execution id; it builds the saga once; and its module no longer requires
+  `java.net.http`.
 
 ### Changed
 
@@ -44,6 +76,17 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
   contracts, and that nothing in the library uses the entry-id conversions.
 - **sl-10:** the `sagalog-api` module no longer `opens` `no.cantara.sagalog.memory` (nothing reflects on it); raw types
   removed; `serialVersionUID` on the three exception classes.
+- **`SelectableThreadPoolExecutor` (fs-9):** the executor under a correctly spelled name. `SelectableThreadPoolExectutor`
+  is kept as a deprecated subclass, so existing code compiles and runs unchanged. `SagaExecution` still takes the old
+  type; until it takes the new one, create the pool for it under the old name.
+- **Saga names may contain `{` and newlines (sa-2).** That rule protected the file log's text format before 2.1.0;
+  both saga logs and `saga-serialization` now store any name as it is. A saga name may be any non-null string. Node
+  ids and adapter names keep their rule, documented as the rule for identifiers: visible characters only.
+- **`SagaException(String, Throwable)` (sa-5),** a constructor that keeps the cause.
+- **`Saga.toString()` and `SagaNode.toString()` (sa-7)** show the name and node count, and the id and adapter.
+- **`SagaSerializer` throws `UncheckedIOException` when the `Writer` fails (ss-2),** with a message that names the saga
+  or node. Before, it threw a bare `RuntimeException`; both are unchecked and keep the `IOException` as the cause.
+- **`FutureSelector` documents its threading contract (fs-2):** any thread may add, one thread selects.
 
 ## 2.1.0 (2026-11-19)
 

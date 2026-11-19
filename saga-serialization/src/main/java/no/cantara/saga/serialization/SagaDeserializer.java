@@ -3,17 +3,35 @@ package no.cantara.saga.serialization;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.api.SagaException;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
+/**
+ * Builds a {@link Saga} from the JSON that {@link SagaSerializer} writes. The saga is built through the
+ * {@link Saga} builder, so every rule of saga-api is checked again. Stateless and thread-safe.
+ */
 public class SagaDeserializer {
+
+    private SagaDeserializer() {
+    }
 
     /**
      * Build a Saga by de-serializing the given json representation of a saga.
      *
      * @param json the json representation of a saga.
      * @return the saga represented as a Saga object.
+     * @throws SagaException if the json is not a valid saga: malformed JSON, a missing or mistyped field (the
+     *                       parser's exception is the cause), or a graph that breaks a rule of the saga builder.
      */
-    public static Saga fromJson(String json) {
+    public static Saga fromJson(String json) throws SagaException {
+        try {
+            return build(json);
+        } catch (JSONException e) {
+            throw new SagaException("De-serialization error: " + e.getMessage(), e);
+        }
+    }
+
+    private static Saga build(String json) {
         JSONObject sagaJsonObject = new JSONObject(json);
         String sagaName = sagaJsonObject.getString("saga");
         JSONArray nodes = sagaJsonObject.getJSONArray("nodes");

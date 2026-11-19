@@ -7,15 +7,37 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static no.cantara.concurrent.futureselector.Utils.launder;
 
+/**
+ * Hands out added futures in the order they complete, normally or exceptionally.
+ * <p>
+ * Threading contract:
+ * <ul>
+ * <li>any thread may {@link #add(SelectableFuture, Object) add} a future, at any time;</li>
+ * <li>only <b>one</b> thread selects: {@link #select()} and {@link #select(long, TimeUnit)} must not be called by
+ * two threads at the same time. Two threads that both see one pending future would both wait for it; one gets it,
+ * and the other waits for ever;</li>
+ * <li>{@link #pending()} and {@link #moreThanOnePending()} are exact only on the selecting thread. On other threads
+ * they are a snapshot.</li>
+ * </ul>
+ * A select that is interrupted throws {@link InterruptedRuntimeException} and leaves the thread interrupted.
+ *
+ * @param <F> the result type of the futures
+ * @param <C> the type of the control value added with each future
+ */
 public class FutureSelector<F, C> {
 
     private final AtomicInteger taskCount = new AtomicInteger(0);
-    private final BlockingQueue<Selection> doneQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<Selection<F, C>> doneQueue = new LinkedBlockingQueue<>();
+
+    public FutureSelector() {
+    }
 
     /**
      * Selects the next future that is done, waiting if necessary for a future to be done.
      *
      * @return the selected future and control.
+     * @throws IllegalStateException        if no future is pending
+     * @throws InterruptedRuntimeException if the thread is interrupted while waiting; it stays interrupted
      */
     public Selection<F, C> select() {
         if (taskCount.get() <= 0) {
@@ -23,7 +45,7 @@ public class FutureSelector<F, C> {
         }
         Selection<F, C> selected;
         try {
-            selected = doneQueue.take(); // safe unchecked assignment
+            selected = doneQueue.take();
         } catch (InterruptedException e) {
             throw launder(e);
         }
@@ -40,6 +62,8 @@ public class FutureSelector<F, C> {
      * @param unit    a {@code TimeUnit} determining how to interpret the
      *                {@code timeout} parameter
      * @return the selected future and control, or null if the specified waiting time elapses before a future was done.
+     * @throws IllegalStateException        if no future is pending
+     * @throws InterruptedRuntimeException if the thread is interrupted while waiting; it stays interrupted
      */
     public Selection<F, C> select(long timeout, TimeUnit unit) {
         if (taskCount.get() <= 0) {
@@ -47,7 +71,7 @@ public class FutureSelector<F, C> {
         }
         Selection<F, C> selected;
         try {
-            selected = doneQueue.poll(timeout, unit); // safe unchecked assignment
+            selected = doneQueue.poll(timeout, unit);
         } catch (InterruptedException e) {
             throw launder(e);
         }
@@ -59,7 +83,6 @@ public class FutureSelector<F, C> {
 
     /**
      * @return true if at least one future that was previously added has not yet been selected, false otherwise.
-     * false otherwise.
      */
     public boolean pending() {
         return taskCount.get() > 0;
@@ -73,10 +96,10 @@ public class FutureSelector<F, C> {
     }
 
     /**
-     * Registers a selectable-future with this selector.
+     * Registers a selectable-future with this selector. Safe to call from any thread.
      *
-     * @param selectableFuture
-     * @param control
+     * @param selectableFuture the future to select when it is done
+     * @param control          the control value to hand out with it
      * @return (taskcount + 1) as it was immediately before registering the given selectableFuture with this selector.
      */
     public int add(SelectableFuture<F> selectableFuture, C control) {
