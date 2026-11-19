@@ -38,7 +38,7 @@ SagaLogPool pool = initializer.initialize(Map.of(
   text is stored as it is. A record with a length that does not fit it, or an unknown entry type, is reported as a
   corrupt entry (`UncheckedIOException`, "Corrupt saga-log entry in ...").
 - `truncate(id)` removes the first elements up to and including that id; `truncate()` clears the file. `delete`
-  deletes the file and its lock file.
+  deletes the file and keeps its lock file.
 - Writes, truncates, reads and `close()` of one log are serialised within the process.
 - **The file shrinks only when it becomes empty.** It doubles when full, and goes back to 4 KiB only when the last
   entry is removed: by `truncate()`, or by `truncate(id)` of the last entry. A log that is never emptied (no truncation,
@@ -76,15 +76,16 @@ SagaLogPool pool = initializer.initialize(Map.of(
   process-wide registry refuses the second open first. The registry lives in the module's classes, so two copies of
   the module loaded by different class loaders in one JVM do not see each other's logs; do not open one log through
   both.
-- **`delete` takes the lock.** `delete` takes the log's lock, deletes the log file and its lock file while holding it,
-  then releases it. It fails with `SagaLogBusyException` when another process, or an open log or another pool in this
-  process, holds the log (as the PostgreSQL log does). One race remains because the lock file is removed: a process
-  that opened the old lock file just before `delete` removed it, and locks it just after, holds a lock no one else
-  sees, while a later open creates and locks a new lock file. Do not delete a log that another process may be opening.
+- **`delete` takes the lock.** `delete` takes the log's lock, deletes the log file while holding it, then releases it.
+  It fails with `SagaLogBusyException` when another process, or an open log or another pool in this process, holds the
+  log (as the PostgreSQL log does). The lock file stays: every process always locks the same file, so a delete can't
+  leave one process holding a lock on a removed lock file while another locks a new one. A deleted log leaves its
+  small `.lock` file in the folder; listing logs ignores it.
 - **Entry ids stay unique for the life of the log file, across restarts, also after the log was emptied.** When a log
   is opened again, ids continue after the highest id in the file and after the next id kept in the lock file. That
   record is written (12 bytes, synced) before a truncate empties the log; a lock file from 2.1.0 is empty and reads
-  as no record. `delete` removes it with the lock file, so a new log under the same name starts at 0 again. The log
+  as no record. The lock file outlives `delete`, so a log made again under the same name continues after that record
+  when there is one. The log
   assigns ids; an id already set in the builder is kept, must be greater than every id in the log, and ids assigned
   later follow it.
 - Power loss during a write can corrupt the file on file systems that do not write a segment atomically (most of
