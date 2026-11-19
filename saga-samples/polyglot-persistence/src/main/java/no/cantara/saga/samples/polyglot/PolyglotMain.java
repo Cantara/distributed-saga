@@ -1,7 +1,7 @@
 package no.cantara.saga.samples.polyglot;
 
 import io.undertow.Undertow;
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.execution.adapter.AdapterLoader;
 import no.cantara.sagalog.SagaLog;
 import no.cantara.sagalog.SagaLogId;
@@ -39,7 +39,7 @@ public class PolyglotMain {
     static final String SAGA_LOGS_PROPERTY = "polyglot.saga-logs";
     static final String DEFAULT_SAGA_LOGS = "4";
 
-    final SelectableThreadPoolExectutor pool;
+    final SelectableThreadPoolExecutor pool;
     final SagaLogPool sagaLogPool;
     /**
      * The saga logs of this instance, registered at start-up. Their number limits how many sagas run at once.
@@ -59,7 +59,7 @@ public class PolyglotMain {
         this.adapterLoader = adapterLoader;
 
         AtomicLong nextWorkerId = new AtomicLong(1);
-        pool = new SelectableThreadPoolExectutor(
+        pool = new SelectableThreadPoolExecutor(
                 5, 100,
                 60, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(),

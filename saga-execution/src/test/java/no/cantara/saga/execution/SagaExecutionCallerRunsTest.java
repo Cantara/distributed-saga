@@ -1,6 +1,6 @@
 package no.cantara.saga.execution;
 
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.execution.adapter.AbortSagaException;
 import no.cantara.saga.execution.adapter.Adapter;
@@ -35,13 +35,13 @@ public class SagaExecutionCallerRunsTest {
                 throw new AbortSagaException("abort");
             }));
 
-    private SelectableThreadPoolExectutor pool;
+    private SelectableThreadPoolExecutor pool;
     private CountDownLatch release;
 
     @BeforeMethod
     public void createPool() {
         // one thread, no queue: a submit while the thread is busy runs the task on the submitting thread
-        pool = new SelectableThreadPoolExectutor(1, 1, 60, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
+        pool = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
         release = new CountDownLatch(1);
     }
 

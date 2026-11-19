@@ -77,12 +77,14 @@ The start and end adapters (`SagaStart`, `SagaEnd`) are registered by `AdapterLo
 ## 3. Create a thread pool
 
 ```java
-SelectableThreadPoolExectutor pool = new SelectableThreadPoolExectutor(
+SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(
         10, 10, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
 ```
 
-Size it for the number of branches of all sagas that run at the same time: a walk waiting at a join node holds its
-thread, and with an unbounded queue the pool does not grow past its core size. See
+Size it for the number of branches of all sagas that run at the same time: a walk waiting at a join node, or for a
+saga-log write, holds its thread, and with an unbounded queue the pool does not grow past its core size. Limit how
+many sagas you run at once in your application; the library does not. Keep the default `AbortPolicy`, or another
+policy that does not run tasks on the submitting thread (`CallerRunsPolicy` makes the sagas fail). See
 [Architecture](architecture.md#threading).
 
 ## 4. Choose and open a saga log
@@ -165,7 +167,7 @@ After a restart, read the logs this instance owns, find executions without `End`
 `recovery = true`:
 
 ```java
-static void recover(SagaLog sagaLog, SelectableThreadPoolExectutor pool,
+static void recover(SagaLog sagaLog, SelectableThreadPoolExecutor pool,
                     Map<String, Saga> sagasByName, AdapterLoader adapters) {
     Map<String, List<SagaLogEntry>> entriesByExecutionId = sagaLog.readIncompleteSagas()
             .collect(Collectors.groupingBy(SagaLogEntry::getExecutionId));
@@ -214,6 +216,16 @@ waits for every walk of a successful saga to end, and checks that every node was
 
 ## 9. Shut down
 
-Shut down the thread pool you created, and call `SagaLogPool.shutdown()` to close the pool's logs. After that the pool
+Shut down the thread pool you created, and call `SagaLogPool.shutdown()` to close the pool's logs. `shutdown()` lets
+running sagas finish. After `shutdownNow()`, cancel the tasks it returns, so that a saga whose walks were all queued
+completes its futures:
+
+```java
+for (Runnable task : pool.shutdownNow()) {
+    if (task instanceof Future) {
+        ((Future<?>) task).cancel(false);
+    }
+}
+``` After that the pool
 refuses `connect`, `tryAcquire` and `tryTakeOwnership` with `SagaPoolShutdownException`, so shut it down after the
 sagas and the recovery that use it have stopped.

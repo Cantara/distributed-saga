@@ -1,6 +1,6 @@
 package no.cantara.saga.samples.polyglot;
 
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.execution.SagaExecution;
 import no.cantara.saga.execution.adapter.AdapterLoader;
@@ -37,7 +37,7 @@ final class PolyglotRecovery {
      * @return the ids of the executions that were recovered and have now finished
      */
     @SuppressWarnings("deprecation") // SagaExecution takes the executor under its old name
-    static List<String> recover(SagaLog sagaLog, SelectableThreadPoolExectutor pool, Map<String, Saga> sagasByName, AdapterLoader adapters) {
+    static List<String> recover(SagaLog sagaLog, SelectableThreadPoolExecutor pool, Map<String, Saga> sagasByName, AdapterLoader adapters) {
         Map<String, List<SagaLogEntry>> entriesByExecutionId = sagaLog.readIncompleteSagas()
                 .collect(Collectors.groupingBy(SagaLogEntry::getExecutionId, LinkedHashMap::new, Collectors.toList()));
         if (entriesByExecutionId.isEmpty()) {

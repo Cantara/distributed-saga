@@ -1,6 +1,6 @@
 package no.cantara.saga.execution;
 
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.api.SagaNode;
 import no.cantara.saga.execution.adapter.AbortSagaException;
@@ -63,8 +63,12 @@ import static org.testng.Assert.fail;
  * compensated once, dependents before their dependencies, End on E last), or UNFINISHED (no End on E);</li>
  * <li>an UNFINISHED saga is completed by forward recovery once the fault is gone, without running again a node that
  * had already ended;</li>
- * <li>a crash at any point of a run (the log cut after any entry) is completed by forward recovery.</li>
+ * <li>a crash at any point of a run (the log cut after any entry) is completed by forward recovery;</li>
+ * <li>nothing is written to the log after the saga reported completion (se-2).</li>
  * </ol>
+ * Besides faults in actions and log writes, rows fail the rollback's read of the log, have the executor reject a walk
+ * or shut down with {@code shutdownNow}, and run many sagas at once on a small pool (fm-2, fm-4).
+ * {@code -Dmatrix.shapes=gap-1,diamond} runs the rows on the named shapes only.
  * Runs once per saga-log provider (the concrete subclasses). Every log a row opens is removed and deleted after it.
  */
 public abstract class SagaFaultMatrixTest {
@@ -121,6 +125,18 @@ public abstract class SagaFaultMatrixTest {
                 .id("r").adapter("r").linkToEnd()
                 .id("z").adapter("z").linkToEnd()
                 .end());
+    }
+
+    /**
+     * The shapes the rows run on: all, or those named in -Dmatrix.shapes=a,b for a focused run.
+     */
+    static List<String> shapes() {
+        String only = System.getProperty("matrix.shapes", "");
+        if (only.isBlank()) {
+            return new ArrayList<>(SHAPES.keySet());
+        }
+        List<String> named = Arrays.asList(only.split(","));
+        return SHAPES.keySet().stream().filter(named::contains).collect(Collectors.toList());
     }
 
     static List<String> steps(Saga saga) {
@@ -191,6 +207,16 @@ public abstract class SagaFaultMatrixTest {
                         }));
             }
             return loader;
+        }
+
+        /**
+         * Removes the faults that have not fired, and the delays, so that a recovery runs without them.
+         */
+        void disarm() {
+            actionFaultBefore.clear();
+            actionFaultAfter.clear();
+            compensationFault.clear();
+            delayMs.clear();
         }
 
         long count(String effect) {
@@ -264,7 +290,7 @@ public abstract class SagaFaultMatrixTest {
 
     // ---- infrastructure -----------------------------------------------------------------------------------------
 
-    SelectableThreadPoolExectutor pool;
+    SelectableThreadPoolExecutor pool;
     SagaLogPool logPool;
 
     final List<SagaLogId> openedLogs = new CopyOnWriteArrayList<>();
@@ -291,7 +317,7 @@ public abstract class SagaFaultMatrixTest {
 
     @BeforeClass
     public void setUp() throws Exception {
-        pool = new SelectableThreadPoolExectutor(32, 32, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        pool = new SelectableThreadPoolExecutor(32, 32, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         logPool = createLogPool();
     }
 
@@ -356,7 +382,7 @@ public abstract class SagaFaultMatrixTest {
     /**
      * Starts a saga on the given pool. A failure thrown by executeSaga itself is the run's failure.
      */
-    static Run start(SelectableThreadPoolExectutor executor, Saga saga, World world, FaultySagaLog log, String executionId, boolean recovery) {
+    static Run start(SelectableThreadPoolExecutor executor, Saga saga, World world, FaultySagaLog log, String executionId, boolean recovery) {
         Run run = new Run();
         run.executionId = executionId;
         try {
@@ -388,7 +414,7 @@ public abstract class SagaFaultMatrixTest {
         }
     }
 
-    static Run finish(SelectableThreadPoolExectutor executor, FaultySagaLog log, Run run) {
+    static Run finish(SelectableThreadPoolExecutor executor, FaultySagaLog log, Run run) {
         long deadline = System.currentTimeMillis() + 2_000;
         while (executor.getActiveCount() > 0 && System.currentTimeMillis() < deadline) {
             sleep(5);
@@ -576,7 +602,7 @@ public abstract class SagaFaultMatrixTest {
     @DataProvider(name = "faults")
     public Object[][] faults() {
         List<Object[]> rows = new ArrayList<>();
-        for (String shape : SHAPES.keySet()) {
+        for (String shape : shapes()) {
             for (String step : steps(SHAPES.get(shape))) {
                 for (Point point : Point.values()) {
                     for (Kind kind : Kind.values()) {
@@ -622,7 +648,7 @@ public abstract class SagaFaultMatrixTest {
     public Object[][] compensationFaults() {
         // the last step aborts; a step that has ended fails in its compensating action
         List<Object[]> rows = new ArrayList<>();
-        for (String shape : SHAPES.keySet()) {
+        for (String shape : shapes()) {
             List<String> steps = steps(SHAPES.get(shape));
             String aborting = steps.get(steps.size() - 1);
             for (String step : steps) {
@@ -678,7 +704,7 @@ public abstract class SagaFaultMatrixTest {
     @DataProvider(name = "crashes")
     public Object[][] crashes() {
         List<Object[]> rows = new ArrayList<>();
-        for (String shape : SHAPES.keySet()) {
+        for (String shape : shapes()) {
             rows.add(new Object[]{shape, "success"});
             rows.add(new Object[]{shape, "abort"});
         }
@@ -772,7 +798,7 @@ public abstract class SagaFaultMatrixTest {
     @DataProvider(name = "snapshotReadFaults")
     public Object[][] snapshotReadFaults() {
         List<Object[]> rows = new ArrayList<>();
-        for (String shape : SHAPES.keySet()) {
+        for (String shape : shapes()) {
             for (Kind kind : new Kind[]{Kind.RUNTIME, Kind.ERROR}) {
                 rows.add(new Object[]{shape, kind});
             }
@@ -823,7 +849,7 @@ public abstract class SagaFaultMatrixTest {
     @DataProvider(name = "rejections")
     public Object[][] rejections() {
         List<Object[]> rows = new ArrayList<>();
-        for (String shape : SHAPES.keySet()) {
+        for (String shape : shapes()) {
             for (String runKind : new String[]{"success", "abort"}) {
                 for (Saturation saturation : Saturation.values()) {
                     rows.add(new Object[]{shape, runKind, saturation});
@@ -848,7 +874,7 @@ public abstract class SagaFaultMatrixTest {
         List<String> steps = steps(saga);
         List<String> violations = new ArrayList<>();
         for (int i = 0; i < REPEAT && violations.isEmpty(); i++) {
-            SelectableThreadPoolExectutor small = new SelectableThreadPoolExectutor(1, 1, 60, TimeUnit.SECONDS,
+            SelectableThreadPoolExecutor small = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS,
                     new SynchronousQueue<>(), new ThreadPoolExecutor.AbortPolicy());
             CountDownLatch release = new CountDownLatch(1);
             try {
@@ -869,6 +895,7 @@ public abstract class SagaFaultMatrixTest {
                 awaitCompletion(run, 5_000);
                 release.countDown();
                 finish(small, log, run);
+                world.disarm(); // an abort that never ran (the walk was rejected) is gone for the recovery
                 Predicate<Throwable> accepted = saturation == Saturation.FIRST_WALK
                         ? SagaFaultMatrixTest::isRejection
                         : f -> f == null && abort == null || f == abort || isRejection(f);
@@ -887,7 +914,7 @@ public abstract class SagaFaultMatrixTest {
     @DataProvider(name = "shutdowns")
     public Object[][] shutdowns() {
         List<Object[]> rows = new ArrayList<>();
-        for (String shape : SHAPES.keySet()) {
+        for (String shape : shapes()) {
             for (String runKind : new String[]{"success", "abort"}) {
                 rows.add(new Object[]{shape, runKind});
             }
@@ -906,7 +933,7 @@ public abstract class SagaFaultMatrixTest {
         List<String> steps = steps(saga);
         List<String> violations = new ArrayList<>();
         for (int i = 0; i < REPEAT && violations.isEmpty(); i++) {
-            SelectableThreadPoolExectutor own = new SelectableThreadPoolExectutor(2, 2, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+            SelectableThreadPoolExecutor own = new SelectableThreadPoolExecutor(2, 2, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
             World world = new World();
             FaultySagaLog log = newLog();
             for (String step : steps) {
@@ -929,7 +956,7 @@ public abstract class SagaFaultMatrixTest {
                 problems.add(where + " run " + i + ": the executor's threads did not end after shutdownNow");
             }
             finish(own, log, run);
-            world.delayMs.clear();
+            world.disarm(); // a fault that did not fire before the shutdown is gone for the recovery
             problems.addAll(check(saga, world, log, run, f -> true, "any outcome", where + " run " + i));
             violations.addAll(problems);
             discard(log);
@@ -959,10 +986,10 @@ public abstract class SagaFaultMatrixTest {
      */
     @Test(dataProvider = "load")
     public void load(Overload overload) throws Exception {
-        List<String> shapes = new ArrayList<>(SHAPES.keySet());
+        List<String> shapes = shapes();
         List<String> violations = new ArrayList<>();
         for (int i = 0; i < REPEAT && violations.isEmpty(); i++) {
-            SelectableThreadPoolExectutor small = new SelectableThreadPoolExectutor(LOAD_THREADS, LOAD_THREADS, 60, TimeUnit.SECONDS,
+            SelectableThreadPoolExecutor small = new SelectableThreadPoolExecutor(LOAD_THREADS, LOAD_THREADS, 60, TimeUnit.SECONDS,
                     new SynchronousQueue<>(),
                     overload == Overload.ABORT_POLICY ? new ThreadPoolExecutor.AbortPolicy() : new ThreadPoolExecutor.CallerRunsPolicy());
             ExecutorService drivers = Executors.newFixedThreadPool(4, r -> {
@@ -1031,7 +1058,8 @@ public abstract class SagaFaultMatrixTest {
                     }
                     finish(small, logs.get(k), run);
                     Throwable fault = injected.get(k);
-                    worlds.get(k).delayMs.clear();
+                    worlds.get(k).disarm();
+                    logs.get(k).failWhen = null;
                     violations.addAll(check(sagas.get(k), worlds.get(k), logs.get(k), run,
                             f -> f == null ? fault == null : f == fault || isRejection(f),
                             "the injected fault or RejectedExecutionException", labels.get(k)));

@@ -88,6 +88,28 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
   (sf-14). Nothing changes on the module path, where the package was never exported. **Migration:** on the class
   path, open logs through the pool (`SagaLogPool.connect`), not with `new FileSagaLog(...)`.
 
+- **A saga whose walk the executor rejects now fails through its futures; `executeSaga` no longer throws
+  `RejectedExecutionException`** (se-4). Before, a rejected first walk was thrown from `executeSaga`, and the saga's
+  futures and `onComplete` were never completed. Now `executeSaga` returns, `onComplete` is called once with a failure
+  result, and the handoff and completion futures fail with the `RejectedExecutionException`. **Migration:** handle a
+  rejection where you handle the saga's other failures, on the completion future (or the handoff future); a
+  `try`/`catch` around `executeSaga` no longer sees it.
+- **`executeSaga` checks its arguments** (se-14): a null `executionId`, `preAction` or `postAction` throws
+  `NullPointerException` at once. Before, a null callback failed the saga inside its first walk. **Migration:** pass
+  non-null callbacks (the four-argument `executeSaga` passes no-op ones).
+- **`AdapterLoader.load` returns `SagaAdapter<?>`, and `register`, `SagaExecutionTraversalContext`'s constructor and
+  `getAdapter()` take or return `SagaAdapter<?>`, not the raw type** (se-13). Binary compatible. **Migration:** code
+  that assigned the result to a parameterized `SagaAdapter<X>` (an unchecked conversion before) casts explicitly.
+- **A rejection policy that runs tasks on the submitting thread no longer runs walks** (se-5). Under
+  `ThreadPoolExecutor.CallerRunsPolicy`, a walk the pool would run on the submitting thread is rejected, and the saga
+  fails with `RejectedExecutionException`, instead of deadlocking the caller (an abort on that walk waited for its
+  own thread) or hanging at a join (a child walk run inline waited for siblings its parent had not started).
+  **Migration:** use a queue, or `AbortPolicy`.
+- **`SagaExecution` takes and returns `SelectableThreadPoolExecutor`** (fs-9), the correctly spelled type: its
+  constructor and `getExecutorService()`. A pool created as the deprecated `SelectableThreadPoolExectutor` still
+  passes, since it is a subclass. **Migration:** code that assigns `getExecutorService()` to a
+  `SelectableThreadPoolExectutor` uses the new type. README, `using.md` and the sample use the new name.
+
 ### Fixed
 
 - **sp-2: the PostgreSQL saga log retries the statement that meets a lost connection.** Every operation wrapped its
@@ -148,6 +170,33 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
   as no record. A failed open releases the lock even on an `Error`, and a cleanup failure is attached to the first
   failure with `addSuppressed` (sf-10).
 
+- **Any failure stops the saga, and a failed saga completes only once none of its walks can still run** (se-1, se-2;
+  matrix rows fm-1). Before, only an abort stopped the traversal. After any other failure, a walk waiting at a join
+  for a step behind the failed one stayed blocked for ever, one pool thread per failed saga (a step between the
+  failing step and the join, `S → f, a; f → b; b → j; a → j`, or the same backwards after a failed compensation);
+  and the completion future failed at once while other branches still started steps, ran actions and wrote `Start`
+  and `End` entries, after `onComplete` and after the caller might have truncated or reused the log. Now a failing
+  walk stops the traversal: waiting walks return, no new step starts, a running action ends and writes its `End`, and
+  then the saga completes, with the step's own exception, as before. Abort and rollback are unchanged. A failed saga
+  completes later, by the time its running actions take.
+- **A failure in the rollback itself completes the saga** (se-3; matrix rows fm-2). If the rollback's read of the
+  log's entries failed (a lost database connection), or its first walk could not start, the saga never completed and
+  `onComplete` was never called. The rollback now has a catch-all entry point: the saga fails with that exception, the
+  abort suppressed on it, as when a compensating action fails.
+- **The rollback no longer waits for a pool thread, and no thread waits for the forward walks** (se-3, se-5). It
+  starts on the thread of the last forward walk to end, once all have ended, instead of a task that waited on a pool
+  thread for them (one more thread per aborting saga, and dropped by `shutdownNow`), and the aborting walk no longer
+  waits for `executeSaga` to return.
+- **`shutdownNow()` no longer leaves sagas waiting for ever** (se-4; matrix rows fm-2). A walk the executor dropped
+  never completed the saga's futures. Now a walk that the executor drops and the caller cancels (the tasks
+  `shutdownNow()` returns) fails the saga with the `CancellationException`, and when another walk of the saga fails
+  (it is interrupted), the walks that have not started are ended at once, so the saga completes without the caller
+  cancelling them. A saga all of whose walks were queued completes only when they are cancelled: documented in
+  `using.md` and `limitations.md`.
+- **`Adapter`'s serializer says what it could not deserialize** (se-11): `IllegalStateException("cannot deserialize
+  <class> from its String constructor")`, with the constructor's own exception as cause (not the
+  `InvocationTargetException`), instead of a bare `RuntimeException`.
+
 ### Changed
 
 - **sp-5, sp-13: timeouts and TLS for the PostgreSQL saga log are configurable** with new keys:
@@ -199,6 +248,20 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
   `FileSagaLogEntryId[id=...]`), the record codec is its own class, and the lock is its own class. The module no
   longer `opens` its package. New tests: two-process tests of the lock and `delete`, failure paths, close twice,
   descriptor leak, stray files, and concurrent writes, reads and truncates.
+
+- **Several failures of one saga:** the first is the saga's failure, and a later, different one is added to it as
+  suppressed (se-1). Before, the later ones were dropped.
+- **Parallel walks no longer share an ancestors deque** (se-14): each walk gets its own, so a `preAction` or
+  `postAction` that reads it does not race with the sibling walks.
+- **`SagaTraversalResult`** (for tests, se-9, se-12): documented as such; no longer prints to standard output; its
+  package-private walk counter is gone; after a rollback it holds the forward walks only. Waiting on it no longer
+  blocks on a node a stopped traversal never visited.
+- **Documentation** (se-6, se-7, se-10, se-14): every saga-log call blocks a pool thread and has no timeout in the
+  engine; the application sizes the pool and limits concurrent sagas; the handoff and completion futures must not be
+  completed or cancelled by callers; actions throw a new exception each time; Javadoc on `SagaHandoffControl`,
+  `SagaHandoffResult`, `SagaExecutionTraversalContext`, `AdapterLoader`.
+- se-13: `serialVersionUID` on `AbortSagaException` and `SagaOnCompleteException`; `AdapterLoader`'s constructor no
+  longer calls the overridable `register`.
 
 ## 2.1.0 (2026-11-19)
 

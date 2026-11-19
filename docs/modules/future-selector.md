@@ -14,7 +14,7 @@ Note the group id: it differs from the other modules (`no.cantara.saga`).
 | Type | Purpose |
 |---|---|
 | `SelectableThreadPoolExecutor` | A `ThreadPoolExecutor` whose `submit` methods return `SelectableFuture`s. Same constructors as `ThreadPoolExecutor`. |
-| `SelectableThreadPoolExectutor` | Deprecated: the same executor under its old, misspelled name, a subclass of `SelectableThreadPoolExecutor`. `SagaExecution` still takes this type, so create the pool for it under the old name until `saga-execution` takes the new one. |
+| `SelectableThreadPoolExectutor` | Deprecated: the same executor under its old, misspelled name, a subclass of `SelectableThreadPoolExecutor`. `SagaExecution` takes the new type, so a pool created under either name works. |
 | `SelectableFuture<V>` | A `CompletableFuture<V>` that is also a `RunnableFuture<V>`, created by the executor around the submitted task. Runs its task at most once. |
 | `FutureSelector<F, C>` | Collects selectable futures, each with a *control* value of type `C`, and returns them in completion order. |
 | `Selection<F, C>` | One selected future and its control value (`future`, `control`); immutable (both fields are `final`). |

@@ -1,6 +1,6 @@
 package no.cantara.saga.execution;
 
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.execution.adapter.AbortSagaException;
 import no.cantara.saga.execution.adapter.Adapter;
@@ -22,7 +22,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.expectThrows;
 
 /**
  * se-4: a walk that the executor drops ({@code shutdownNow}) or rejects completes the saga's futures exceptionally.
@@ -35,10 +34,18 @@ public class SagaExecutionShutdownTest {
                 throw new AbortSagaException("abort");
             }));
 
+    /**
+     * @return the failure of a future that must fail within 3 s (join throws a CancellationException as it is)
+     */
     private static Throwable failureOf(Future<?> future) {
-        CompletionException e = expectThrows(CompletionException.class,
-                () -> ((java.util.concurrent.CompletableFuture<?>) future).orTimeout(3, TimeUnit.SECONDS).join());
-        return e.getCause();
+        try {
+            ((java.util.concurrent.CompletableFuture<?>) future).orTimeout(3, TimeUnit.SECONDS).join();
+        } catch (CompletionException e) {
+            return e.getCause();
+        } catch (CancellationException e) {
+            return e;
+        }
+        throw new AssertionError("the future completed normally");
     }
 
     private static void cancelAll(List<Runnable> dropped) {
@@ -51,7 +58,7 @@ public class SagaExecutionShutdownTest {
 
     @Test
     public void thatASagaWhoseFirstWalkIsDroppedByShutdownNowFailsOnceTheDroppedTasksAreCancelled() {
-        SelectableThreadPoolExectutor pool = new SelectableThreadPoolExectutor(1, 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         CountDownLatch busy = new CountDownLatch(1);
         try {
             pool.submit(() -> {
@@ -79,7 +86,7 @@ public class SagaExecutionShutdownTest {
         // one thread: the walk of S queues the walk of a and runs b itself, where it blocks until shutdownNow
         // interrupts it; the queued walk of a is dropped and never runs. The saga completes without the caller
         // cancelling the dropped task.
-        SelectableThreadPoolExectutor pool = new SelectableThreadPoolExectutor(1, 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         CountDownLatch inB = new CountDownLatch(1);
         CountDownLatch never = new CountDownLatch(1);
         AdapterLoader adapters = new AdapterLoader()
@@ -117,7 +124,7 @@ public class SagaExecutionShutdownTest {
     @Test
     public void thatAnAbortWhileOtherWorkHoldsThePoolStillRollsBack() {
         // the aborting action fills the pool's one thread with other work; the rollback must not wait for a thread
-        SelectableThreadPoolExectutor pool = new SelectableThreadPoolExectutor(1, 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         CountDownLatch busy = new CountDownLatch(1);
         AdapterLoader adapters = new AdapterLoader().register(new Adapter<>(String.class, "aborts", (i, d) -> {
             pool.submit(() -> {
@@ -144,7 +151,7 @@ public class SagaExecutionShutdownTest {
 
     @Test
     public void thatARejectedFirstWalkFailsTheSagasFutures() {
-        SelectableThreadPoolExectutor pool = new SelectableThreadPoolExectutor(1, 1, 60, TimeUnit.SECONDS,
+        SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS,
                 new SynchronousQueue<>(), new ThreadPoolExecutor.AbortPolicy());
         CountDownLatch busy = new CountDownLatch(1);
         try {
@@ -167,7 +174,7 @@ public class SagaExecutionShutdownTest {
 
     @Test
     public void thatASagaStartedAfterShutdownFails() {
-        SelectableThreadPoolExectutor pool = new SelectableThreadPoolExectutor(1, 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         pool.shutdown();
         Saga saga = Saga.start("after-shutdown").linkTo("a").id("a").adapter("ok").linkToEnd().end();
         SagaHandoffControl control = new SagaExecution(MemoryLogs.newLog(), pool, saga, ADAPTERS)

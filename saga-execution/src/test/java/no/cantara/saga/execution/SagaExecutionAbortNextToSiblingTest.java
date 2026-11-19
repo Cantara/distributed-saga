@@ -1,6 +1,6 @@
 package no.cantara.saga.execution;
 
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.execution.adapter.AbortSagaException;
 import no.cantara.saga.execution.adapter.Adapter;
@@ -39,12 +39,12 @@ public class SagaExecutionAbortNextToSiblingTest {
             .id("search").adapter("search").linkToEnd()
             .end();
 
-    private SelectableThreadPoolExectutor pool;
+    private SelectableThreadPoolExecutor pool;
     private final List<String> compensated = new CopyOnWriteArrayList<>();
 
     @BeforeMethod
     public void setUp() {
-        pool = new SelectableThreadPoolExectutor(10, 10, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        pool = new SelectableThreadPoolExecutor(10, 10, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         compensated.clear();
     }
 

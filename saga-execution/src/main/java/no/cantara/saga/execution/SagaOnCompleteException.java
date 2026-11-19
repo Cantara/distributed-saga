@@ -7,6 +7,8 @@ package no.cantara.saga.execution;
  */
 public class SagaOnCompleteException extends RuntimeException {
 
+    private static final long serialVersionUID = 1L;
+
     private final String executionId;
 
     public SagaOnCompleteException(String executionId, Throwable cause) {

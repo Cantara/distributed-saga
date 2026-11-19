@@ -17,37 +17,54 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static no.cantara.concurrent.futureselector.Utils.launder;
 
+/**
+ * The walks of one traversal of a saga's graph and the result of each node's visit. <b>For tests:</b> it lets a test
+ * wait for the walks of a traversal and check that every node was walked and visited.
+ * <p>
+ * The result returned by {@link SagaHandoffControl#getTraversalResult()} is the forward traversal's. After an abort,
+ * the forward traversal stopped and the rollback walked the graph backward in a traversal of its own, so the nodes the
+ * forward walks never reached are reported as not walked. After a failure, waiting fails with that failure.
+ */
 public class SagaTraversalResult {
     final Saga saga;
-    final AtomicInteger pendingWalks;
     final BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk;
     final ConcurrentHashMap<String, SelectableFuture<SelectableFuture<Object>>> visitFutureById;
 
     private final Object sync = new Object(); // protects completedThreadWalks
     private Collection<SelectableFuture<List<String>>> completedThreadWalks;
 
-    SagaTraversalResult(Saga saga, AtomicInteger pendingWalks, BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk, ConcurrentHashMap<String, SelectableFuture<SelectableFuture<Object>>> visitFutureById) {
+    SagaTraversalResult(Saga saga, BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk, ConcurrentHashMap<String, SelectableFuture<SelectableFuture<Object>>> visitFutureById) {
         this.saga = saga;
-        this.pendingWalks = pendingWalks;
         this.futureThreadWalk = futureThreadWalk;
         this.visitFutureById = visitFutureById;
     }
 
+    /**
+     * Waits for every walk of the traversal to end, then checks that every node of the saga was walked.
+     *
+     * @throws TimeoutRuntimeException     if the walks have not ended within the timeout
+     * @throws InterruptedRuntimeException if the calling thread is interrupted while waiting
+     * @throws ExecutionRuntimeException   if a walk failed (its cause is the walk's failure)
+     * @throws IllegalStateException       if a node was not walked
+     */
     public void waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(long timeout, TimeUnit unit) {
         waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(timeout, unit, futureThreadWalks -> {
         }, (node, output) -> {
         });
     }
 
+    /**
+     * As {@link #waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(long, TimeUnit)}, and gives each walk and
+     * each visited node's output to the consumers.
+     */
     public void waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(long timeout, TimeUnit unit, Consumer<SelectableFuture<List<String>>> threadWalkConsumer, BiConsumer<SagaNode, Object> visitConsumer) {
         long startTime = System.currentTimeMillis();
         long durationMs = unit.toMillis(timeout);
@@ -66,7 +83,10 @@ public class SagaTraversalResult {
             Object output;
             try {
                 output = selected.future.get(); // will never block
-            } catch (Exception e) {
+            } catch (ExecutionException e) {
+                throw launder(e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 throw launder(e);
             }
             visitConsumer.accept(selected.control, output);
@@ -94,11 +114,7 @@ public class SagaTraversalResult {
 
         Set<String> nodeIdsWalked = new LinkedHashSet<>();
         for (SelectableFuture<List<String>> threadWalk : completedThreadWalks) {
-            try {
-                nodeIdsWalked.addAll(threadWalk.get()); // will never block
-            } catch (InterruptedException | ExecutionException e) {
-                throw launder(e);
-            }
+            nodeIdsWalked.addAll(threadWalk.join()); // done and successful: never blocks or throws
         }
 
         // select walks as they become complete, although they should generally all be complete by this point.
@@ -113,38 +129,26 @@ public class SagaTraversalResult {
         return completedThreadWalks;
     }
 
-    Collection<SelectableFuture<List<String>>> waitForThreadWalksToComplete() {
-        return waitForThreadWalksToComplete(-1, -1);
-    }
-
     private Collection<SelectableFuture<List<String>>> waitForThreadWalksToComplete(long startTime, long durationMs) {
         synchronized (sync) {
             if (completedThreadWalks != null) {
                 return completedThreadWalks;
             }
 
-            Collection<SelectableFuture<List<String>>> result = new ArrayList<>();
-
             FutureSelector<List<String>, Object> walkSelector = new FutureSelector<>();
-            result.addAll(drainAllAvailableWalkFuturesAndAddtoSelector(walkSelector));
+            Collection<SelectableFuture<List<String>>> result = new ArrayList<>(drainAllAvailableWalkFuturesAndAddtoSelector(walkSelector));
             if (result.isEmpty()) {
-                throw new IllegalStateException("No traversal walk futures detected, could this be a bug in the algorithm?");
+                throw new IllegalStateException("No traversal walk futures detected: the first walk was not submitted");
             }
 
-            // register all walk futures with a new selector.
-            for (SelectableFuture<List<String>> futureWalk : result) {
-                walkSelector.add(futureWalk, null);
-            }
             while (walkSelector.pending()) {
                 Selection<List<String>, Object> selected = walkSelector.select();
                 try {
-                    if (startTime == -1) {
-                        selected.future.get();
-                    } else {
-                        long remainingMs = remaining(startTime, durationMs);
-                        selected.future.get(remainingMs, TimeUnit.MILLISECONDS);
-                    }
-                } catch (Exception e) {
+                    selected.future.get(remaining(startTime, durationMs), TimeUnit.MILLISECONDS);
+                } catch (ExecutionException | TimeoutException e) {
+                    throw launder(e);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                     throw launder(e);
                 }
                 // potentially more walks available now that we have waited on the selected walk to complete
@@ -158,7 +162,7 @@ public class SagaTraversalResult {
 
     private ArrayList<SelectableFuture<List<String>>> drainAllAvailableWalkFuturesAndAddtoSelector(FutureSelector<List<String>, Object> selector) {
         ArrayList<SelectableFuture<List<String>>> futureWalks = new ArrayList<>();
-        pendingWalks.addAndGet(-futureThreadWalk.drainTo(futureWalks));
+        futureThreadWalk.drainTo(futureWalks);
         for (SelectableFuture<List<String>> futureWalk : futureWalks) {
             selector.add(futureWalk, null);
         }
@@ -168,19 +172,11 @@ public class SagaTraversalResult {
     private FutureSelector<Object, SagaNode> getVisitFutureSelector() {
         FutureSelector<Object, SagaNode> visitSelector = new FutureSelector<>();
         for (SagaNode node : saga.nodes()) {
-            Future<SelectableFuture<Object>> futureFuture = visitFutureById.get(node.id);
-            SelectableFuture<Object> selectableFuture;
-            try {
-                if (futureFuture == null) {
-                    System.out.println("Not visited node: " + node.id);
-                } else {
-                    selectableFuture = futureFuture.get(); // will not block
-                    visitSelector.add(selectableFuture, node);
-                }
-            } catch (Exception e) {
-                throw launder(e);
+            SelectableFuture<SelectableFuture<Object>> futureFuture = visitFutureById.get(node.id);
+            // not there, or not done: the node was not visited (a stopped traversal)
+            if (futureFuture != null && futureFuture.isDone() && !futureFuture.isCompletedExceptionally()) {
+                visitSelector.add(futureFuture.join(), node);
             }
-            //visitSelector.add(selectableFuture, node);
         }
         return visitSelector;
     }
