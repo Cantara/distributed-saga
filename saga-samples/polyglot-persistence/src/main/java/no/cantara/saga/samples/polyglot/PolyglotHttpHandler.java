@@ -4,7 +4,7 @@ import io.undertow.io.Receiver;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.Headers;
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.execution.SagaExecution;
 import no.cantara.saga.execution.SagaHandoffControl;
 import no.cantara.saga.execution.adapter.AbortSagaException;
@@ -39,15 +39,15 @@ public class PolyglotHttpHandler implements HttpHandler {
 
     static final long ACQUIRE_TIMEOUT_SECONDS = 5;
 
-    private final SelectableThreadPoolExectutor executorService;
+    private final SelectableThreadPoolExecutor executorService;
     private final SagaLogPool sagaLogPool;
     private final AdapterLoader adapterLoader;
 
-    public PolyglotHttpHandler(SelectableThreadPoolExectutor executorService, SagaLogPool sagaLogPool) {
+    public PolyglotHttpHandler(SelectableThreadPoolExecutor executorService, SagaLogPool sagaLogPool) {
         this(executorService, sagaLogPool, adapters());
     }
 
-    PolyglotHttpHandler(SelectableThreadPoolExectutor executorService, SagaLogPool sagaLogPool, AdapterLoader adapterLoader) {
+    PolyglotHttpHandler(SelectableThreadPoolExecutor executorService, SagaLogPool sagaLogPool, AdapterLoader adapterLoader) {
         this.executorService = executorService;
         this.sagaLogPool = sagaLogPool;
         this.adapterLoader = adapterLoader;

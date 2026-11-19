@@ -1,6 +1,6 @@
 package no.cantara.saga.execution;
 
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.execution.adapter.AbortSagaException;
 import no.cantara.saga.execution.adapter.Adapter;
@@ -28,7 +28,7 @@ import static org.testng.Assert.expectThrows;
 
 public class SagaExecutionOnCompleteTest {
 
-    private static final SelectableThreadPoolExectutor executorService = new SelectableThreadPoolExectutor(
+    private static final SelectableThreadPoolExecutor executorService = new SelectableThreadPoolExecutor(
             5, 20, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>(),
             runnable -> new Thread(runnable, "on-complete-test-worker"),
             new ThreadPoolExecutor.AbortPolicy()

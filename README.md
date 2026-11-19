@@ -74,7 +74,7 @@ AdapterLoader adapters = new AdapterLoader()
                 (input, dependeesOutput) -> "shipment-1"));
 
 // 3. A thread pool and a saga log.
-SelectableThreadPoolExectutor pool = new SelectableThreadPoolExectutor(
+SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(
         10, 10, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
 SagaLogPool logPool = ServiceLoader.load(SagaLogInitializer.class).stream()
         .filter(p -> p.type().getName().equals("no.cantara.sagalog.memory.MemorySagaLogInitializer"))

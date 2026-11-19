@@ -1,7 +1,7 @@
 package no.cantara.saga.execution;
 
 import no.cantara.concurrent.futureselector.SelectableFuture;
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.api.SagaNode;
 import no.cantara.saga.execution.adapter.AbortSagaException;
@@ -14,24 +14,28 @@ import no.cantara.sagalog.SagaLogEntryType;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import static java.util.Optional.ofNullable;
-
+/**
+ * Runs executions of one saga on a thread pool, writing every step to a saga log.
+ * <p>
+ * The pool belongs to the caller. A saga holds a pool thread for every walk that runs, waits at a join node, or waits
+ * for a saga-log write or read; none of these waits has a timeout in the engine. Size the pool for the sagas that run
+ * at the same time, and limit how many run at once in the application. The pool's rejection policy must not run
+ * tasks on the submitting thread ({@code ThreadPoolExecutor.CallerRunsPolicy}): such a walk is rejected and fails the
+ * saga. A rejected walk fails the saga with the {@link java.util.concurrent.RejectedExecutionException}.
+ */
 public class SagaExecution {
 
     private final SagaLog sagaLog;
-    private final SelectableThreadPoolExectutor executorService;
+    private final SelectableThreadPoolExecutor executorService;
     private final Saga saga;
     private final AdapterLoader adapterLoader;
 
-    public SagaExecution(SagaLog sagaLog, SelectableThreadPoolExectutor executorService, Saga saga, AdapterLoader adapterLoader) {
+    public SagaExecution(SagaLog sagaLog, SelectableThreadPoolExecutor executorService, Saga saga, AdapterLoader adapterLoader) {
         this.sagaLog = sagaLog;
         this.executorService = executorService;
         this.saga = saga;
@@ -42,7 +46,7 @@ public class SagaExecution {
         return sagaLog;
     }
 
-    public SelectableThreadPoolExectutor getExecutorService() {
+    public SelectableThreadPoolExecutor getExecutorService() {
         return executorService;
     }
 
@@ -55,9 +59,14 @@ public class SagaExecution {
     }
 
     /**
-     * @param sagaInput the data to pass as input to start-node.
-     * @param recovery
-     * @return
+     * Executes a saga without {@code preAction} and {@code postAction} callbacks. See
+     * {@link #executeSaga(String, Object, boolean, Consumer, Consumer, Consumer)}.
+     *
+     * @param executionId the id of this execution of the saga; not null
+     * @param sagaInput   the data to pass as input to start-node
+     * @param recovery    true to recover an execution from the entries in the saga log
+     * @param onComplete  called when the saga has completed, before the completion future completes; may be null
+     * @return the handoff control of this execution
      */
     public SagaHandoffControl executeSaga(String executionId, Object sagaInput, boolean recovery, Consumer<SagaHandoffResult> onComplete) {
         return executeSaga(executionId, sagaInput, recovery, onComplete,
@@ -71,10 +80,9 @@ public class SagaExecution {
      * Executes a saga.
      * <p>
      * The {@code onComplete} consumer is called once, when the saga has completed: after the End entry is written
-     * on success, or after rollback (or a failure of the traversal) otherwise. It is called on the thread that
-     * completes the saga, a thread of the executor given to this {@code SagaExecution} (unless that executor's
-     * rejection policy runs tasks on the submitting thread). It may block; that holds the executor thread until it
-     * returns.
+     * on success, after the rollback after an abort, or, after any other failure, once no walk of the saga can still
+     * run an action or write to the saga log. It is called on the thread that completes the saga, normally a thread
+     * of the executor given to this {@code SagaExecution}. It may block; that holds the thread until it returns.
      * <p>
      * The completion future of the returned {@link SagaHandoffControl} completes only after {@code onComplete}
      * has returned or thrown, so a caller waiting on it can rely on what the consumer has done. It completes:
@@ -86,41 +94,81 @@ public class SagaExecution {
      * saga succeeded but {@code onComplete} threw. The saga itself has completed and its End entry is in the log.</li>
      * </ul>
      * A {@code null} consumer is the same as one that does nothing.
+     * <p>
+     * A walk that the executor rejects (it is shut down, or saturated with {@code AbortPolicy}) fails the saga with the
+     * {@link java.util.concurrent.RejectedExecutionException}, through the futures; {@code executeSaga} itself does
+     * not throw it. A walk dropped by {@code shutdownNow()} fails the saga when the task returned by
+     * {@code shutdownNow()} is cancelled, or when another walk of the saga fails (it is interrupted).
+     * <p>
+     * In recovery, the log's entries are read on the calling thread, and a failure to read them is thrown here.
      *
-     * @param executionId the id of this execution of the saga
+     * @param executionId the id of this execution of the saga; not null
      * @param sagaInput   the data to pass as input to start-node
      * @param recovery    true to recover an execution from the entries in the saga log
-     * @param onComplete  called when the saga has completed, before the completion future completes
-     * @param preAction   called before each node's action
-     * @param postAction  called after each node's action
+     * @param onComplete  called when the saga has completed, before the completion future completes; may be null
+     * @param preAction   called before each node's action, on the walk's thread; not null
+     * @param postAction  called after each node's action, on the walk's thread; not null
      * @return the handoff control of this execution
+     * @throws NullPointerException if {@code executionId}, {@code preAction} or {@code postAction} is null
      */
     public SagaHandoffControl executeSaga(String executionId, Object sagaInput, boolean recovery, Consumer<SagaHandoffResult> onComplete, Consumer<SagaExecutionTraversalContext> preAction, Consumer<SagaExecutionTraversalContext> postAction) {
+        Objects.requireNonNull(executionId, "executionId");
+        Objects.requireNonNull(preAction, "preAction");
+        Objects.requireNonNull(postAction, "postAction");
         SelectableFuture<SagaHandoffResult> handoffFuture = new SelectableFuture<>(null);
         // completed by the traversal; the completion future given to callers completes after onComplete has run
         SelectableFuture<SagaHandoffResult> traversalCompletionFuture = new SelectableFuture<>(null);
         SelectableFuture<SagaHandoffResult> completionFuture = new SelectableFuture<>(null);
+        Map<String, List<SagaLogEntry>> recoverySagaLogEntriesBySagaNodeId = recovery
+                ? sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId)
+                : Collections.emptyMap();
+        Execution execution = new Execution(executionId, sagaInput, recovery, recoverySagaLogEntriesBySagaNodeId,
+                preAction, postAction, handoffFuture, traversalCompletionFuture);
+        traversalCompletionFuture.whenComplete((r, t) -> runOnCompleteThenComplete(executionId, onComplete, r, attachAbort(t, execution.firstAbort.get()), completionFuture));
+        SagaTraversalResult traversalResult = execution.forward.forward(execution::visitForward);
+        return new SagaHandoffControl(sagaInput, executionId, saga, sagaLog, adapterLoader, traversalResult, handoffFuture, completionFuture);
+    }
+
+    /**
+     * One execution of the saga: the forward visit of each node, the abort hand-off, and the rollback.
+     */
+    private final class Execution {
+        final String executionId;
+        final Object sagaInput;
+        final boolean recovery;
+        final Map<String, List<SagaLogEntry>> recoveryEntriesByNodeId;
+        final Consumer<SagaExecutionTraversalContext> preAction;
+        final Consumer<SagaExecutionTraversalContext> postAction;
+        final SelectableFuture<SagaHandoffResult> handoffFuture;
+        final SelectableFuture<SagaHandoffResult> completionFuture;
+        final SagaWalks walks;
+        final SagaTraversal forward;
         // the first abort, so that a saga that fails for another reason at the same time still reports it
-        AtomicReference<AbortSagaException> firstAbort = new AtomicReference<>();
-        traversalCompletionFuture.whenComplete((r, t) -> runOnCompleteThenComplete(executionId, onComplete, r, attachAbort(t, firstAbort.get()), completionFuture));
-        SagaTraversal sagaTraversal = new SagaTraversal(executorService, saga);
-        CompletableFuture<SagaTraversalResult> futureTraversalResult = new CompletableFuture<>();
-        Map<String, List<SagaLogEntry>> recoverySagaLogEntriesBySagaNodeId;
-        if (recovery) {
-            recoverySagaLogEntriesBySagaNodeId = sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId);
-        } else {
-            recoverySagaLogEntriesBySagaNodeId = Collections.emptyMap();
+        final AtomicReference<AbortSagaException> firstAbort = new AtomicReference<>();
+
+        Execution(String executionId, Object sagaInput, boolean recovery, Map<String, List<SagaLogEntry>> recoveryEntriesByNodeId,
+                  Consumer<SagaExecutionTraversalContext> preAction, Consumer<SagaExecutionTraversalContext> postAction,
+                  SelectableFuture<SagaHandoffResult> handoffFuture, SelectableFuture<SagaHandoffResult> completionFuture) {
+            this.executionId = executionId;
+            this.sagaInput = sagaInput;
+            this.recovery = recovery;
+            this.recoveryEntriesByNodeId = recoveryEntriesByNodeId;
+            this.preAction = preAction;
+            this.postAction = postAction;
+            this.handoffFuture = handoffFuture;
+            this.completionFuture = completionFuture;
+            this.walks = new SagaWalks(handoffFuture, completionFuture);
+            this.forward = new SagaTraversal(executorService, saga, walks);
         }
-        SagaTraversalResult traversalResult = sagaTraversal.forward(handoffFuture, traversalCompletionFuture, ste -> {
-            SagaAdapter adapter = adapterLoader.load(ste.node);
+
+        Object visitForward(SagaTraversalElement ste) {
+            SagaAdapter<?> adapter = adapterLoader.load(ste.node);
 
             preAction.accept(new SagaExecutionTraversalContext(ste.outputByNode, ste.ancestors, ste.node, adapter, null));
 
             if (Saga.ID_START.equals(ste.node.id)) {
                 if (!recovery) {
-                    String serializedSagaInput = ofNullable(sagaInput)
-                            .map(i -> adapter.serializer().serialize(i)) // safe unchecked call
-                            .orElse(null);
+                    String serializedSagaInput = sagaInput == null ? null : serialize(adapter, sagaInput);
                     sagaLog.write(sagaLog.builder().startSaga(executionId, saga.name, serializedSagaInput)).join();
                 }
                 handoffFuture.complete(new SagaHandoffResult(executionId));
@@ -130,20 +178,20 @@ public class SagaExecution {
             if (Saga.ID_END.equals(ste.node.id)) {
                 sagaLog.write(sagaLog.builder().endSaga(executionId)).join();
                 SagaHandoffResult result = new SagaHandoffResult(executionId);
-                traversalCompletionFuture.complete(result);
+                completionFuture.complete(result);
                 postAction.accept(new SagaExecutionTraversalContext(ste.outputByNode, ste.ancestors, ste.node, adapter, null));
                 return null;
             }
             // the last entry of the node decides its state: an execution can hold several rounds of the same node
-            SagaLogEntryType lastEntryType = lastEntryType(recoverySagaLogEntriesBySagaNodeId.get(ste.node.id));
+            List<SagaLogEntry> recoveryEntries = recoveryEntriesByNodeId.get(ste.node.id);
+            SagaLogEntryType lastEntryType = lastEntryType(recoveryEntries);
             if (lastEntryType == SagaLogEntryType.End) {
                 // the action has ended and was not undone since: pass on its latest output
-                Optional<String> optionalSerializedOutput = lastEndOutput(recoverySagaLogEntriesBySagaNodeId.get(ste.node.id));
+                Optional<String> optionalSerializedOutput = lastEndOutput(recoveryEntries);
                 postAction.accept(new SagaExecutionTraversalContext(ste.outputByNode, ste.ancestors, ste.node, adapter, optionalSerializedOutput.orElse(null)));
-                Object output = optionalSerializedOutput
-                        .map(jsonData -> adapter.serializer().deserialize(jsonData))
+                return optionalSerializedOutput
+                        .map(jsonData -> (Object) adapter.serializer().deserialize(jsonData))
                         .orElse(null);
-                return output;
             }
             if (lastEntryType != SagaLogEntryType.Start) {
                 // a new round: not started, or aborted, or (being) compensated
@@ -152,38 +200,82 @@ public class SagaExecution {
             Object actionOutput;
             try {
                 actionOutput = adapter.executeAction(ste.node, sagaInput, ste.outputByNode);
-
             } catch (AbortSagaException e) {
-                firstAbort.compareAndSet(null, e);
-                boolean firstToAbort = sagaTraversal.stopTraversal();
-                sagaLog.write(sagaLog.builder().abort(executionId, ste.node.id)).join();
-                if (!firstToAbort) {
-                    return null; // More than one abort, let only first abort trigger rollback-recovery
-                }
-                SagaTraversalResult sagaTraversalResult = futureTraversalResult.join();
-
-                executorService.submit(() -> {
-                    // ensure we catch all saga-log entries of forward traversal before running recovery
-                    sagaTraversalResult.waitForThreadWalksToComplete();
-
-                    rollbackRecovery(e, executionId, sagaInput, traversalCompletionFuture, sagaTraversalResult.pendingWalks, sagaTraversalResult.futureThreadWalk, new ConcurrentHashMap<>());
-                });
-
-                return null;
+                return abort(ste.node, e);
             }
 
-            String serializedActionOutput = ofNullable(actionOutput)
-                    .map(o -> adapter.serializer().serialize(o)) // safe unchecked call
-                    .orElse(null);
+            String serializedActionOutput = actionOutput == null ? null : serialize(adapter, actionOutput);
             sagaLog.write(sagaLog.builder().endAction(executionId, ste.node.id, serializedActionOutput)).join();
 
             postAction.accept(new SagaExecutionTraversalContext(ste.outputByNode, ste.ancestors, ste.node, adapter, serializedActionOutput));
 
             return actionOutput;
-        });
-        futureTraversalResult.complete(traversalResult);
+        }
 
-        return new SagaHandoffControl(sagaInput, executionId, saga, sagaLog, adapterLoader, traversalResult, handoffFuture, completionFuture);
+        /**
+         * The abort hand-off: the first abort stops the forward traversal, writes Abort, and registers the rollback,
+         * which starts once every forward walk has ended (so it sees all their entries), on the thread of the last
+         * walk to end, unless the saga failed meanwhile. A later abort only writes its Abort entry.
+         */
+        private Object abort(SagaNode node, AbortSagaException e) {
+            firstAbort.compareAndSet(null, e);
+            boolean firstToAbort = forward.stopTraversal();
+            sagaLog.write(sagaLog.builder().abort(executionId, node.id)).join();
+            if (firstToAbort) {
+                walks.whenIdle(() -> rollback(e));
+            }
+            return null;
+        }
+
+        /**
+         * Rolls the saga back. Runs with a catch-all entry point ({@link SagaWalks}): a failure here, such as a failed
+         * read of the log's entries, fails the saga with that failure and the abort suppressed on it.
+         */
+        private void rollback(AbortSagaException abort) {
+            Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId = sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId);
+            new SagaTraversal(executorService, saga, walks).backwardOnThisThread(ste -> visitBackward(ste, sagaLogEntriesBySagaNodeId, abort));
+        }
+
+        private Object visitBackward(SagaTraversalElement ste, Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId, AbortSagaException abort) {
+            if (Saga.ID_END.equals(ste.node.id)) {
+                return null;
+            }
+            if (Saga.ID_START.equals(ste.node.id)) {
+                sagaLog.write(sagaLog.builder().endSaga(executionId)).join();
+                completionFuture.completeExceptionally(abort);
+                return null;
+            }
+            SagaAdapter<?> adapter = adapterLoader.load(ste.node);
+            List<SagaLogEntry> sagaLogEntries = sagaLogEntriesBySagaNodeId.get(ste.node.id);
+            SagaLogEntryType lastEntryType = lastEntryType(sagaLogEntries);
+            if (lastEntryType == null || lastEntryType == SagaLogEntryType.Abort || lastEntryType == SagaLogEntryType.Comp) {
+                return null; // never started, the aborting node itself, or already compensated
+            }
+            if (!adapter.hasCompensatingAction()) {
+                return null; // nothing to undo; its effect stays and no compensation is logged
+            }
+            // the action started but did not end (last entry Start): it may or may not have run; no output
+            Optional<String> serializedOutput = lastEntryType == SagaLogEntryType.End || lastEntryType == SagaLogEntryType.CompStart
+                    ? lastEndOutput(sagaLogEntries)
+                    : Optional.empty();
+            if (lastEntryType != SagaLogEntryType.CompStart) {
+                // written before the compensating action runs, so a crash during it leaves the node marked as undone
+                sagaLog.write(sagaLog.builder().compStart(executionId, ste.node.id)).join();
+            }
+            compensate(adapter, ste.node, sagaInput, serializedOutput);
+            sagaLog.write(sagaLog.builder().compDone(executionId, ste.node.id)).join();
+            return null; // no output from running compensating action.
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <O> String serialize(SagaAdapter<O> adapter, Object output) {
+        return adapter.serializer().serialize((O) output); // the adapter's own output, or the saga input for S
+    }
+
+    private static <O> void compensate(SagaAdapter<O> adapter, SagaNode node, Object sagaInput, Optional<String> serializedOutput) {
+        O actionOutput = serializedOutput.map(jsonData -> adapter.serializer().deserialize(jsonData)).orElse(null);
+        adapter.executeCompensatingAction(node, sagaInput, actionOutput);
     }
 
     /**
@@ -226,49 +318,6 @@ public class SagaExecution {
         } else {
             completionFuture.complete(result);
         }
-    }
-
-    private void rollbackRecovery(AbortSagaException exception,
-                                  String executionId,
-                                  Object sagaInput,
-                                  SelectableFuture<SagaHandoffResult> completionFuture,
-                                  AtomicInteger pendingWalks,
-                                  BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk,
-                                  ConcurrentHashMap<String, SelectableFuture<SelectableFuture<Object>>> futureById) {
-        Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId = sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId);
-        SagaTraversal sagaTraversal = new SagaTraversal(executorService, saga);
-        sagaTraversal.backward(null, completionFuture, pendingWalks, futureThreadWalk, futureById, ste -> {
-            if (Saga.ID_END.equals(ste.node.id)) {
-                return null;
-            }
-            if (Saga.ID_START.equals(ste.node.id)) {
-                sagaLog.write(sagaLog.builder().endSaga(executionId)).join();
-                completionFuture.completeExceptionally(exception);
-                return null;
-            }
-            SagaAdapter adapter = adapterLoader.load(ste.node);
-            List<SagaLogEntry> sagaLogEntries = sagaLogEntriesBySagaNodeId.get(ste.node.id);
-            SagaLogEntryType lastEntryType = lastEntryType(sagaLogEntries);
-            if (lastEntryType == null || lastEntryType == SagaLogEntryType.Abort || lastEntryType == SagaLogEntryType.Comp) {
-                return null; // never started, the aborting node itself, or already compensated
-            }
-            if (!adapter.hasCompensatingAction()) {
-                return null; // nothing to undo; its effect stays and no compensation is logged
-            }
-            Object actionOutput = null; // the action started but did not end: it may or may not have run
-            if (lastEntryType == SagaLogEntryType.End || lastEntryType == SagaLogEntryType.CompStart) {
-                actionOutput = lastEndOutput(sagaLogEntries)
-                        .map(jsonData -> adapter.serializer().deserialize(jsonData))
-                        .orElse(null);
-            }
-            if (lastEntryType != SagaLogEntryType.CompStart) {
-                // written before the compensating action runs, so a crash during it leaves the node marked as undone
-                sagaLog.write(sagaLog.builder().compStart(executionId, ste.node.id)).join();
-            }
-            adapter.executeCompensatingAction(ste.node, sagaInput, actionOutput); // safe unchecked call
-            sagaLog.write(sagaLog.builder().compDone(executionId, ste.node.id)).join();
-            return null; // no output from running compensating action.
-        });
     }
 
     /**

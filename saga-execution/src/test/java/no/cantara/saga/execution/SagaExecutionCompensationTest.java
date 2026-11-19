@@ -1,6 +1,6 @@
 package no.cantara.saga.execution;
 
-import no.cantara.concurrent.futureselector.SelectableThreadPoolExectutor;
+import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.api.SagaNode;
 import no.cantara.saga.execution.adapter.AbortSagaException;
@@ -39,7 +39,7 @@ import static org.testng.Assert.expectThrows;
  */
 public class SagaExecutionCompensationTest {
 
-    SelectableThreadPoolExectutor pool;
+    SelectableThreadPoolExecutor pool;
     final List<String> effects = new CopyOnWriteArrayList<>();
     final Map<String, String> abortOnce = new ConcurrentHashMap<>();
     final Map<String, Long> delay = new ConcurrentHashMap<>();
@@ -47,7 +47,7 @@ public class SagaExecutionCompensationTest {
 
     @BeforeMethod
     public void setUp() {
-        pool = new SelectableThreadPoolExectutor(16, 16, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        pool = new SelectableThreadPoolExecutor(16, 16, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         effects.clear();
         abortOnce.clear();
         delay.clear();

@@ -71,7 +71,5 @@ The response holds the execution id, the handoff and execution times, the saga d
 
 ### What it leaves out
 
-- `SagaExecution` takes the executor under its old name, `SelectableThreadPoolExectutor`, so the sample still uses
-  that (deprecated) name.
 - It recovers only its own instance-local logs, not the logs of other instances (`clusterWideLogIds()`).
 - `GET` does nothing.

@@ -8,6 +8,8 @@ module no.cantara.saga.execution {
     exports no.cantara.saga.execution;
     exports no.cantara.saga.execution.adapter;
 
+    // main code loads no provider; the tests, patched into this module, load the memory saga log through
+    // ServiceLoader, which needs the declaration
     uses no.cantara.sagalog.SagaLogInitializer;
 
 }

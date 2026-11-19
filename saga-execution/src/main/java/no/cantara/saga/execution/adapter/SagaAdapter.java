@@ -34,22 +34,24 @@ public interface SagaAdapter<OUTPUT> {
      * @return the output from executing the action.
      * @throws AbortSagaException action implementation may choose to throw an AbortSagaException
      *                            in order to trigger a full saga rollback.
+     *                            <p>
+     *                            Throw a new exception each time, from an action and from a compensating action:
+     *                            the engine attaches other failures of the same saga (an abort, a failure of
+     *                            {@code onComplete}, a failure of another step) to the saga's failure as suppressed
+     *                            exceptions. A shared instance would collect them across sagas, and one created with
+     *                            suppression disabled drops them.
      */
     OUTPUT executeAction(SagaNode sagaNode, Object sagaInput, Map<SagaNode, Object> dependeesOutput) throws AbortSagaException;
 
     /**
-     * Execute the compensating action that this adapter implicitly represents using sagaInput.
-     * Upon returning normally, it will be assumed that the compensating action was successfully
-     * executed.
+     * Undoes the effect of the action. Called during rollback only if {@link #hasCompensatingAction()} is true, for a
+     * node whose action has ended (with its logged output) or whose action started but never ended (with a
+     * {@code null} output: the action may or may not have run). Must be safe to call more than once. Upon returning
+     * normally, the compensating action is taken to have succeeded.
      *
      * @param sagaNode     the sagaNode for which this compensating action is invoked.
      * @param sagaInput    the original request data associated with this saga.
-     * @param actionOutput the output from executing the {@link #executeAction(SagaNode, Object, Map<SagaNode, Object>)} method.
-     */
-    /**
-     * Undoes the effect of the action. Called during rollback only if {@link #hasCompensatingAction()} is true, for a
-     * node whose action has ended (with its logged output) or whose action started but never ended (with a
-     * {@code null} output: the action may or may not have run). Must be safe to call more than once.
+     * @param actionOutput the output of {@link #executeAction(SagaNode, Object, Map)}, as logged, or {@code null}
      */
     void executeCompensatingAction(SagaNode sagaNode, Object sagaInput, OUTPUT actionOutput);
 

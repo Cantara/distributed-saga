@@ -18,7 +18,7 @@ Package `no.cantara.saga.execution`:
 | `SagaHandoffResult` | The result: `getExecutionId()`, `isSuccess()`, `isFailure()`, `getFailureCause()`. |
 | `SagaOnCompleteException` | The completion future's failure when the saga succeeded but `onComplete` threw. |
 | `SagaExecutionTraversalContext` | Given to the `preAction` and `postAction` callbacks. |
-| `SagaTraversalResult` | The traversal's state; `waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(...)`, for tests. |
+| `SagaTraversalResult` | The forward traversal's walks; `waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(...)`, for tests. After a rollback it reports the nodes the stopped forward walks never reached as not walked. |
 
 Package `no.cantara.saga.execution.adapter`:
 
@@ -42,11 +42,11 @@ SagaHandoffControl control = execution.executeSaga(executionId, sagaInput, recov
 
 | Parameter | Meaning |
 |---|---|
-| `executionId` | The id of this execution, stored on every log entry. Unique; reused only for recovery. |
+| `executionId` | The id of this execution, stored on every log entry. Unique; reused only for recovery. Not null. |
 | `sagaInput` | Passed to every action. Serialized with the start adapter (`toString()`) into the first log entry. |
 | `recovery` | `false` for a new execution. `true` to continue an execution from the entries already in the log. |
 | `onComplete` | Called once when the execution is finished; may be `null`. |
-| `preAction`, `postAction` | Called before and after each node. |
+| `preAction`, `postAction` | Called before and after each node, on the walk's thread. Not null. The ancestors deque in the context belongs to that node's walk: read it, do not change it. |
 
 An instance can run any number of executions, one after another or at the same time, as long as each has its own saga
 log, or the log tolerates concurrent writers.
@@ -57,16 +57,31 @@ log, or the log tolerates concurrent writers.
   saga survives a crash of the process.
 - **Completion future**: completes after `End` on `E` has been written and `onComplete` has returned.
 
+Both are the futures the engine completes: cancelling or completing them does not stop the saga, and hides its outcome
+from other callers waiting on them. Wait on them, or on a copy (`future.copy()`).
+
 | Outcome | `onComplete` receives | Completion future |
 |---|---|---|
 | Success | a success result | completes with the result |
 | Success, but `onComplete` throws | a success result | fails with `SagaOnCompleteException` (cause: the callback's exception) |
 | `AbortSagaException`, rolled back | a failure result with the abort | fails with the `AbortSagaException` |
 | Rolled back, and `onComplete` throws | a failure result | fails with the `AbortSagaException`; the callback's exception is suppressed on it |
-| Another exception from an action or the log | a failure result | fails with that exception; nothing is rolled back |
+| Another exception from an action or the log | a failure result | fails with that exception, once the saga's running actions have ended; nothing is rolled back |
+| A failure in the rollback (a compensating action, the read of the log's entries) | a failure result | fails with that exception; the abort is suppressed on it |
+| The executor rejects a walk, or a walk dropped by `shutdownNow()` is cancelled | a failure result | fails with `RejectedExecutionException` or `CancellationException` |
 
-`onComplete` runs on the pool thread that finished the saga, never on the thread that called `executeSaga` (unless
-the pool's rejection policy runs tasks on the caller).
+`onComplete` runs on the pool thread that finished the saga. It runs on the thread that called `executeSaga` only when
+the saga fails before any walk ran (its first walk was rejected), or on the thread that cancels a dropped walk.
+
+### The pool
+
+The pool belongs to the application; the engine starts no threads. Every walk holds a pool thread while it runs an
+action, waits at a join, or waits for a saga-log write or read, none of which has a timeout in the engine. The
+application sizes the pool and limits how many sagas run at once. The rejection policy must not run tasks on the
+submitting thread: under `CallerRunsPolicy` a walk the pool would run on the submitting thread is rejected, and the
+saga fails with `RejectedExecutionException`. A rejected walk fails the saga through its futures; `executeSaga` does
+not throw it. After `shutdownNow()`, cancel the tasks it returns, so that sagas whose walks were all queued complete.
+See [Known limitations](../limitations.md#the-executor-rejection-shutdown-and-caller-runs).
 
 ### Recovery mode
 
@@ -118,12 +133,18 @@ Rules for adapters:
 - A `null` output is written as no data, and read back as `null`.
 - Throw `AbortSagaException` from an action to roll back. The aborting node is not compensated: undo its own partial
   effect before you throw.
+- Throw a new exception each time: the engine attaches other failures of the saga to the saga's failure as
+  suppressed exceptions, which a shared instance would collect across sagas.
 - A compensating action can be called with a `null` output, for a node that started but did not end: it must handle
   an action that may never have run.
 - `AdapterLoader.load` fails for an unknown adapter name only when the node is reached. Register every adapter
   before you start sagas.
+- `Adapter`'s serializer fails with `IllegalStateException` ("cannot deserialize <class> from its String
+  constructor") when the output type has no public `String` constructor, or the constructor throws (then that is the
+  cause).
 
 ## Behaviour to know
 
 See [Known limitations](../limitations.md) for exceptions other than abort, thread starvation, a compensating action
-that fails, recovery after a crash during rollback, and timeouts.
+that fails, recovery after a crash during rollback, timeouts, how many sagas run at once, and the executor's
+rejection policy and shutdown.
