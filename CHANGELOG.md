@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 (unreleased)
+## 2.0.0 (2026-11-19)
 
 Released on Cantara's repository (`mvnrepo.cantara.no`), not on Maven Central. The group ids and artifact ids are
 unchanged; only the version changes from 1.0.x to 2.0.0.
