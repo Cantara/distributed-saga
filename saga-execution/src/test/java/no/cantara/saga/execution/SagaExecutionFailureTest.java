@@ -35,8 +35,18 @@ public class SagaExecutionFailureTest {
             .id("search").adapter("ok").linkToEnd()
             .end();
 
+    // the same shape, failing at once, so the two walks that see the failure finish at nearly the same time
+    private static final Saga SAGA_FAST_FAILURE = Saga.start("failing-fast").linkTo("txlog")
+            .id("txlog").adapter("ok").linkTo("persistence", "search")
+            .id("persistence").adapter("fails-at-once").linkToEnd()
+            .id("search").adapter("ok").linkToEnd()
+            .end();
+
     private static final AdapterLoader ADAPTERS = new AdapterLoader()
             .register(new Adapter<>(String.class, "ok", (input, dependeesOutput) -> "ok"))
+            .register(new Adapter<>(String.class, "fails-at-once", (input, dependeesOutput) -> {
+                throw new IllegalStateException("not an abort");
+            }))
             .register(new Adapter<>(String.class, "fails-late", (input, dependeesOutput) -> {
                 sleep(200); // let the sibling reach E and wait there for this node
                 throw new IllegalStateException("not an abort");
@@ -92,6 +102,20 @@ public class SagaExecutionFailureTest {
         for (int i = 0; i < 3; i++) {
             runFailingSaga();
             assertNoActiveThreadsWithin(2_000);
+        }
+    }
+
+    @Test
+    public void thatTheSagaFailsWithTheActionsOwnExceptionEveryTime() {
+        // two walks see the failure (the failing node's own walk, and the sibling's walk waiting at E) and race to
+        // complete the saga; both must report the action's exception, not a wrapper around it
+        for (int i = 0; i < 200; i++) {
+            SagaHandoffControl control = new SagaExecution(newSagaLog(), pool, SAGA_FAST_FAILURE, ADAPTERS)
+                    .executeSaga(UUID.randomUUID().toString(), "{}", false, r -> {
+                    });
+            CompletionException e = expectThrows(CompletionException.class, () -> control.getCompletionFuture().join());
+            assertTrue(e.getCause() instanceof IllegalStateException, "run " + i + ": " + e.getCause());
+            assertEquals(e.getCause().getMessage(), "not an abort", "run " + i);
         }
     }
 
