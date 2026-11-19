@@ -2,5 +2,15 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>cantara/Cantara-Renovate-Config"
+  ],
+  "packageRules": [
+    {
+      "description": "Stay on PostgreSQL 18 until Amazon RDS offers 19 for production (19 is in the RDS preview environment only)",
+      "matchPackageNames": [
+        "io.zonky.test.postgres:embedded-postgres-binaries-bom",
+        "postgres"
+      ],
+      "allowedVersions": "<19"
+    }
   ]
 }
