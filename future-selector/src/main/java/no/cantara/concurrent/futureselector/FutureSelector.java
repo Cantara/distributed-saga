@@ -48,12 +48,12 @@ public class FutureSelector<F, C> {
         Selection<F, C> selected;
         try {
             selected = doneQueue.poll(timeout, unit); // safe unchecked assignment
-            if (selected == null) {
-            }
         } catch (InterruptedException e) {
             throw launder(e);
         }
-        taskCount.decrementAndGet(); // always decrement taskCount only after taking the task off the queue.
+        if (selected != null) {
+            taskCount.decrementAndGet(); // only a future taken off the queue is selected; a timeout selects nothing
+        }
         return selected;
     }
 

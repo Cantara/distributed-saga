@@ -1,6 +1,7 @@
 package no.cantara.sagalog.file;
 
 import no.cantara.sagalog.SagaLog;
+import no.cantara.sagalog.SagaLogBusyException;
 import no.cantara.sagalog.SagaLogEntry;
 import no.cantara.sagalog.SagaLogEntryBuilder;
 import no.cantara.sagalog.SagaLogEntryId;
@@ -10,8 +11,12 @@ import no.cantara.sagalog.file.queue.QueueFile;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -24,14 +29,65 @@ public class FileSagaLog implements SagaLog, AutoCloseable {
     private final FileSagaLogId sagaLogId;
     private final AtomicLong nextId = new AtomicLong(0);
     private final QueueFile queueFile;
+    private final FileChannel lockChannel;
+    private final FileLock lock;
 
-    public FileSagaLog(SagaLogId _sagaLogId) {
+    /**
+     * Opens the log, holding an exclusive lock on its lock file ({@code <log file>.lock}) until {@link #close()}.
+     *
+     * @throws SagaLogBusyException if another process, or another open log in this process, holds the lock
+     */
+    public FileSagaLog(SagaLogId _sagaLogId) throws SagaLogBusyException {
         this.sagaLogId = (FileSagaLogId) _sagaLogId;
         Path path = sagaLogId.getPath();
+        FileChannel channel = null;
+        FileLock fileLock = null;
+        QueueFile file = null;
         try {
-            queueFile = new QueueFile.Builder(path.toFile()).build();
+            channel = FileChannel.open(lockPath(path), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            try {
+                fileLock = channel.tryLock();
+            } catch (OverlappingFileLockException e) {
+                fileLock = null; // held by another open log in this process
+            }
+            if (fileLock == null) {
+                throw new SagaLogBusyException("Saga-log is in use by another process or another open log: " + path);
+            }
+            file = new QueueFile.Builder(path.toFile()).build();
+            // continue after the highest id in the file, so ids stay unique across restarts
+            long maxId = -1;
+            for (byte[] bytes : file) {
+                maxId = Math.max(maxId, ((FileSagaLogEntryId) deserialize(bytes).getId()).id);
+            }
+            nextId.set(maxId + 1);
         } catch (IOException e) {
+            closeQuietly(file, fileLock, channel);
             throw new RuntimeException(e);
+        } catch (RuntimeException e) {
+            closeQuietly(file, fileLock, channel);
+            throw e;
+        }
+        this.lockChannel = channel;
+        this.lock = fileLock;
+        this.queueFile = file;
+    }
+
+    static Path lockPath(Path logPath) {
+        return logPath.resolveSibling(logPath.getFileName() + ".lock");
+    }
+
+    private static void closeQuietly(QueueFile file, FileLock fileLock, FileChannel channel) {
+        try {
+            if (file != null) file.close();
+        } catch (IOException ignored) {
+        }
+        try {
+            if (fileLock != null) fileLock.release();
+        } catch (IOException ignored) {
+        }
+        try {
+            if (channel != null) channel.close();
+        } catch (IOException ignored) {
         }
     }
 
@@ -129,7 +185,15 @@ public class FileSagaLog implements SagaLog, AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        queueFile.close();
+        try {
+            queueFile.close();
+        } finally {
+            try {
+                lock.release();
+            } finally {
+                lockChannel.close();
+            }
+        }
     }
 
     byte[] serialize(SagaLogEntry entry) {

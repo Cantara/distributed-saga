@@ -24,13 +24,6 @@ at the same time, the walks that would complete the join stay in the queue, and 
 `ThreadPoolExecutor` with an unbounded queue never adds threads above its core size. Size the core of the pool for the
 widest saga times the number of sagas you run at once.
 
-## Rollback of a node that started but did not end
-
-During rollback, a node with a `Start` but no `End` entry is meant to be run again and then compensated. That path
-fails with a `NullPointerException` when it gathers the outputs of the node's dependencies, so the rollback stops
-there. In a normal run this does not happen: when an action aborts, the other running actions finish first, and
-every started node has ended. It happens when a log already holds a node that never ended.
-
 ## A compensating action that fails
 
 If a compensating action throws, the rollback stops: the remaining nodes are not compensated, no `End` is written on
@@ -49,8 +42,7 @@ thread and its saga. Put timeouts inside your actions.
 
 ## Saga-log providers
 
-- **File log**: keeps entry data only when it starts with `{`, has no escaping for spaces, restarts entry ids at 0
-  after a restart, and has no lock between processes. See [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
+- **File log**: keeps entry data only when it starts with `{`, and has no escaping for spaces. See [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
 - **PostgreSQL log**: each open log holds a connection, so the connection pool must be larger than the number of logs
   open at once; `delete(logId)` does not drop the log's table. See [sagalog-postgres](modules/sagalog-postgres.md#connections).
 - **Ownership in the pool**: `releaseOwnership(logId)` and `release(logId)` take no owner, so any caller can release

@@ -12,6 +12,7 @@ import no.cantara.sagalog.SagaLogEntry;
 import no.cantara.sagalog.SagaLogEntryType;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -259,9 +260,9 @@ public class SagaExecution {
 
     private Map<SagaNode, Object> getDependeesOutputByNode
             (Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId, SagaNode node, SagaAdapter adapter) {
-        Map<SagaNode, Object> dependeesOutputByNode = null;
+        Map<SagaNode, Object> dependeesOutputByNode = new LinkedHashMap<>();
         for (SagaNode dependeeNode : node.incoming) {
-            List<SagaLogEntry> dependeeEntries = sagaLogEntriesBySagaNodeId.get(dependeeNode.id);
+            List<SagaLogEntry> dependeeEntries = sagaLogEntriesBySagaNodeId.getOrDefault(dependeeNode.id, List.of());
             Object dependeeOutput = dependeeEntries.stream()
                     .filter(e -> SagaLogEntryType.End == e.getEntryType())
                     .findFirst()

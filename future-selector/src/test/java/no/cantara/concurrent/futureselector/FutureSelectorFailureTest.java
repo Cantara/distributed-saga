@@ -76,4 +76,21 @@ public class FutureSelectorFailureTest {
         assertEquals(selector.select(5, TimeUnit.SECONDS).control, "late");
         assertFalse(selector.pending());
     }
+
+    @Test
+    public void thatATimedOutSelectSelectsNothing() throws Exception {
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        FutureSelector<String, String> selector = new FutureSelector<>();
+        selector.add(pool.submit(() -> {
+            release.await();
+            return "done";
+        }), "slow");
+
+        assertEquals(selector.select(20, TimeUnit.MILLISECONDS), null);
+        assertTrue(selector.pending(), "a timed-out select must not count as a selection");
+
+        release.countDown();
+        assertEquals(selector.select(5, TimeUnit.SECONDS).control, "slow");
+        assertFalse(selector.pending());
+    }
 }

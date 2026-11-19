@@ -114,9 +114,8 @@ An action that must fail the whole saga throws `AbortSagaException`. The library
 1. writes `Abort` on that node and stops the forward walk,
 2. walks the graph backwards from `E`, and for every node the log shows as started runs the compensating action and
    writes `Comp`. A node is compensated only after the nodes that depend on it have been compensated. A node that
-   ended is compensated with its logged output. A node that started but did not end is meant to be run again first
-   (it may or may not have run) and then compensated; that path currently fails, see
-   [Known limitations](limitations.md#rollback-of-a-node-that-started-but-did-not-end).
+   ended is compensated with its logged output. A node that started but did not end is run again first (it may or
+   may not have run), then compensated.
 3. writes `End` on `E`, calls `onComplete` with a failure result, and completes the completion future exceptionally
    with the `AbortSagaException`.
 
