@@ -129,15 +129,15 @@ public class PolyglotHttpHandler implements HttpHandler {
                         sb.append(",");
                     }
                     sb.append("{");
-                    sb.append("\"id\":").append(JSONObject.quote(sagaLog.toString(sagaLogEntry.getId()))).append(",");
-                    sb.append("\"executionId\":").append(JSONObject.quote(sagaLogEntry.getExecutionId())).append(",");
-                    sb.append("\"type\":").append(JSONObject.quote(sagaLogEntry.getEntryType().toString())).append(",");
-                    sb.append("\"nodeId\":").append(JSONObject.quote(sagaLogEntry.getNodeId())).append(",");
+                    sb.append("\"id\":").append(JSONObject.quote(sagaLog.toString(sagaLogEntry.getId())));
+                    sb.append(",\"executionId\":").append(JSONObject.quote(sagaLogEntry.getExecutionId()));
+                    sb.append(",\"type\":").append(JSONObject.quote(sagaLogEntry.getEntryType().toString()));
+                    sb.append(",\"nodeId\":").append(JSONObject.quote(sagaLogEntry.getNodeId()));
                     if (sagaLogEntry.getSagaName() != null) {
-                        sb.append("\"sagaName\":").append(JSONObject.quote(sagaLogEntry.getSagaName())).append(",");
+                        sb.append(",\"sagaName\":").append(JSONObject.quote(sagaLogEntry.getSagaName()));
                     }
                     if (sagaLogEntry.getJsonData() != null) {
-                        sb.append("\"jsonData\":").append(sagaLogEntry.getJsonData());
+                        sb.append(",\"jsonData\":").append(sagaLogEntry.getJsonData());
                     }
                     sb.append("}");
                 }

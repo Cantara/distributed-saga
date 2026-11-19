@@ -86,7 +86,8 @@ public class PolyglotMain {
                 "host", "127.0.0.1",
                 "port", "8139",
                 "sagalog.provider", "no.cantara.sagalog.file.FileSagaLogInitializer",
-                "filesagalog.folder", "./target/sagalog"
+                "filesagalog.folder", "./target/sagalog",
+                "cluster.instance-id", "01"
         );
         PolyglotMain polyglotMain = new PolyglotMain(configuration);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> polyglotMain.stop()));
