@@ -12,7 +12,7 @@ nothing about execution or logs.
 | `Saga` | A validated saga: its `name`, start node, end node, all nodes, and two traversals. |
 | `Saga.SagaBuilder` | The fluent builder, started with `Saga.start(name)`. |
 | `SagaNode` | One node: `id`, `adapter` name, `incoming` and `outgoing` nodes. |
-| `SagaException` | Thrown when a saga is invalid. |
+| `SagaException` | Thrown when a saga is invalid. Has a constructor that takes a cause. |
 
 Constants on `Saga`: `ID_START = "S"`, `ID_END = "E"`, `ADAPTER_START = "SagaStart"`, `ADAPTER_END = "SagaEnd"`.
 
@@ -30,9 +30,13 @@ Saga saga = Saga.start("Polyglot Saga")                 // creates S, then: wher
 
 Names and ids:
 
-- The saga name must not contain `{` or a newline.
-- Node ids and adapter names must consist of visible characters only: no spaces or control characters.
+- The saga name may be any string, but not `null`. The saga logs store it as it is, and `saga-serialization` escapes
+  it in JSON. (Up to 2.1.0 it could not contain `{` or a newline, a rule left over from the file log's old format.)
+- Node ids and adapter names are identifiers: visible characters only (`\p{Graph}`: ASCII letters, digits and
+  punctuation), no spaces or control characters, and not `null`.
 - Node ids must be unique (`Duplicate id: ...`); `S` and `E` are taken.
+- A node links to another node at most once (`Duplicate link from node(a) to node(b)`).
+- A `null` saga name, id or adapter throws `SagaException`, as a `null` link does.
 
 The builder alternates between three steps: `id(...)` names a node, `adapter(...)` sets its adapter, and `linkTo(...)`
 or `linkToEnd()` sets its outgoing links. Nodes can link to nodes defined later.
@@ -49,12 +53,15 @@ or `linkToEnd()` sets its outgoing links. Nodes can link to nodes defined later.
 - `depthFirstPreOrderFullTraversal(visit)` visits every node from `S` forwards; `reverseDepthFirstPreOrderFullTraversal`
   from `E` backwards. The visitor receives the set of ancestor ids on the current path and the node. Each node is
   visited once, on the first path that reaches it.
-- `SagaNode.incoming` and `SagaNode.outgoing` are the node's neighbours. `SagaNode` equality is by `id`.
+- `SagaNode.incoming` and `SagaNode.outgoing` are the node's neighbours, in declaration order. `SagaNode` equality is
+  by `id`.
+- `Saga.toString()` gives the name and the number of nodes; `SagaNode.toString()` the id and the adapter.
 
 ## Behaviour to know
 
 - A node may have no path to `E` (a dead end). `end()` accepts it, but execution does not wait for such a branch:
   the saga can finish while the branch still runs. Link every branch to the end.
-- `SagaNode.incoming` and `outgoing` are public, mutable collections. Do not change them after `end()`.
+- A built saga is immutable and safe to share between threads: one instance serves every concurrent execution.
+  `SagaNode.incoming` and `outgoing` are unmodifiable; a write throws `UnsupportedOperationException`.
 - Validation and traversals are recursive; a very deep or very large graph (tens of thousands of nodes) can cause a
   `StackOverflowError`.

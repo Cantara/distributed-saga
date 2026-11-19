@@ -123,7 +123,8 @@ each compensated node and `End` on `E`, before `onComplete` and the completion f
 
 ## Where the state lives
 
-- The `Saga` definition and the adapters are immutable from the library's point of view and are shared.
+- The `Saga` definition is immutable (its node links cannot be changed after `end()`) and is shared by every
+  execution. The adapters are immutable from the library's point of view and are shared too.
 - All state of a running execution is in memory, in the traversal, and in the saga log.
 - Only the saga log survives a restart. Whatever recovery needs must be in the log: the saga name, the input, and
   each completed node's output.
