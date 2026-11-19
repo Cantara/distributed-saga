@@ -21,16 +21,26 @@ import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.ServiceLoader;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -86,6 +96,30 @@ public abstract class SagaFaultMatrixTest {
                 .id("b").adapter("b").linkToEnd()
                 .id("c").adapter("c").linkToEnd()
                 .id("d").adapter("d").linkToEnd()
+                .end());
+        // fm-1: a step between a failing step and the join it reaches, so the join waits for a step that is never run
+        SHAPES.put("gap-1", Saga.start("gap-1").linkTo("f", "a")
+                .id("f").adapter("f").linkTo("b")
+                .id("b").adapter("b").linkTo("j")
+                .id("a").adapter("a").linkTo("j")
+                .id("j").adapter("j").linkToEnd()
+                .end());
+        // fm-1: the failing branch two steps from the join
+        SHAPES.put("gap-2", Saga.start("gap-2").linkTo("f", "a")
+                .id("f").adapter("f").linkTo("b")
+                .id("b").adapter("b").linkTo("c")
+                .id("c").adapter("c").linkTo("j")
+                .id("a").adapter("a").linkTo("j")
+                .id("j").adapter("j").linkToEnd()
+                .end());
+        // fm-1, the backward twin: two branches of two steps each into E; one aborts, a compensation on the other
+        // fails, and the backward join at x waits for a step that the failed backward walk never reaches
+        SHAPES.put("gap-backward", Saga.start("gap-backward").linkTo("x")
+                .id("x").adapter("x").linkTo("p", "q")
+                .id("p").adapter("p").linkTo("z")
+                .id("q").adapter("q").linkTo("r")
+                .id("r").adapter("r").linkToEnd()
+                .id("z").adapter("z").linkToEnd()
                 .end());
     }
 
@@ -165,12 +199,16 @@ public abstract class SagaFaultMatrixTest {
     }
 
     /**
-     * A saga log that fails one chosen write (the write never reaches the log).
+     * A saga log that fails one chosen write (the write never reaches the log), or the first read of the entries
+     * after an entry of a chosen type was written (fm-2).
      */
     static class FaultySagaLog implements SagaLog {
         final SagaLog delegate;
         volatile Predicate<SagaLogEntryBuilder> failWhen;
         volatile Throwable failure;
+        volatile SagaLogEntryType failReadAfter;
+        volatile Throwable readFailure;
+        volatile boolean readArmed;
 
         FaultySagaLog(SagaLog delegate) {
             this.delegate = delegate;
@@ -181,6 +219,14 @@ public abstract class SagaFaultMatrixTest {
             this.failWhen = b -> b.entryType() == type && nodeId.equals(b.nodeId());
         }
 
+        /**
+         * Fails the first {@code readEntries} after an entry of the given type has been written.
+         */
+        void failReadOnceAfter(SagaLogEntryType type, Throwable failure) {
+            this.readFailure = failure;
+            this.failReadAfter = type;
+        }
+
         @Override
         public CompletableFuture<SagaLogEntry> write(SagaLogEntryBuilder builder) {
             Predicate<SagaLogEntryBuilder> p = failWhen;
@@ -188,14 +234,27 @@ public abstract class SagaFaultMatrixTest {
                 failWhen = null;
                 return CompletableFuture.failedFuture(failure);
             }
-            return delegate.write(builder);
+            CompletableFuture<SagaLogEntry> written = delegate.write(builder);
+            if (failReadAfter != null && builder.entryType() == failReadAfter) {
+                failReadAfter = null;
+                readArmed = true;
+            }
+            return written;
+        }
+
+        @Override
+        public Stream<SagaLogEntry> readEntries(String executionId) {
+            if (readArmed) {
+                readArmed = false;
+                sneakyThrow(readFailure);
+            }
+            return delegate.readEntries(executionId);
         }
 
         @Override public SagaLogId id() { return delegate.id(); }
         @Override public CompletableFuture<Void> truncate(SagaLogEntryId id) { return delegate.truncate(id); }
         @Override public CompletableFuture<Void> truncate() { return delegate.truncate(); }
         @Override public Stream<SagaLogEntry> readIncompleteSagas() { return delegate.readIncompleteSagas(); }
-        @Override public Stream<SagaLogEntry> readEntries(String executionId) { return delegate.readEntries(executionId); }
         @Override public String toString(SagaLogEntryId id) { return delegate.toString(id); }
         @Override public SagaLogEntryId fromString(String id) { return delegate.fromString(id); }
         @Override public byte[] toBytes(SagaLogEntryId id) { return delegate.toBytes(id); }
@@ -283,32 +342,61 @@ public abstract class SagaFaultMatrixTest {
         int onCompleteCalls;
         int busyThreadsAfter;
         List<String> entries;
+        volatile List<String> entriesAtOnComplete; // what onComplete saw; null if it was not called
+        final AtomicInteger onCompleteCounter = new AtomicInteger();
+        Future<SagaHandoffResult> completion;
     }
 
     Run execute(Saga saga, World world, FaultySagaLog log, String executionId, boolean recovery) {
+        Run run = start(pool, saga, world, log, executionId, recovery);
+        awaitCompletion(run, 5_000);
+        return finish(pool, log, run);
+    }
+
+    /**
+     * Starts a saga on the given pool. A failure thrown by executeSaga itself is the run's failure.
+     */
+    static Run start(SelectableThreadPoolExectutor executor, Saga saga, World world, FaultySagaLog log, String executionId, boolean recovery) {
         Run run = new Run();
         run.executionId = executionId;
-        AtomicInteger onComplete = new AtomicInteger();
-        SagaHandoffControl control;
         try {
-            control = new SagaExecution(log, pool, saga, world.adapters(saga))
-                    .executeSaga(executionId, "{}", recovery, r -> onComplete.incrementAndGet());
-            control.getCompletionFuture().get(5, TimeUnit.SECONDS);
+            SagaHandoffControl control = new SagaExecution(log, executor, saga, world.adapters(saga))
+                    .executeSaga(executionId, "{}", recovery, r -> {
+                        // se-2: the entries when the saga reports completion are all the entries it ever writes
+                        run.entriesAtOnComplete = entries(log, executionId);
+                        run.onCompleteCounter.incrementAndGet();
+                    });
+            run.completion = control.getCompletionFuture();
+        } catch (Throwable t) {
+            run.failure = t; // thrown by executeSaga itself
+        }
+        return run;
+    }
+
+    static void awaitCompletion(Run run, long ms) {
+        if (run.completion == null) {
+            return;
+        }
+        try {
+            run.completion.get(ms, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             run.hung = true;
         } catch (ExecutionException e) {
             run.failure = e.getCause();
         } catch (Throwable t) {
-            run.failure = t; // thrown by executeSaga itself
+            run.failure = t;
         }
+    }
+
+    static Run finish(SelectableThreadPoolExectutor executor, FaultySagaLog log, Run run) {
         long deadline = System.currentTimeMillis() + 2_000;
-        while (pool.getActiveCount() > 0 && System.currentTimeMillis() < deadline) {
+        while (executor.getActiveCount() > 0 && System.currentTimeMillis() < deadline) {
             sleep(5);
         }
         sleep(10); // a late second onComplete call would show here
-        run.busyThreadsAfter = pool.getActiveCount();
-        run.onCompleteCalls = onComplete.get();
-        run.entries = entries(log, executionId);
+        run.busyThreadsAfter = executor.getActiveCount();
+        run.onCompleteCalls = run.onCompleteCounter.get();
+        run.entries = entries(log, run.executionId);
         return run;
     }
 
@@ -411,15 +499,31 @@ public abstract class SagaFaultMatrixTest {
      */
     List<String> check(Saga saga, World world, FaultySagaLog log, Run run, Throwable injected, String label) {
         List<String> problems = new ArrayList<>();
-        if (run.hung) problems.add("completion future did not complete within 5 s");
-        if (run.onCompleteCalls != 1) problems.add("onComplete called " + run.onCompleteCalls + " times");
-        if (run.busyThreadsAfter != 0) problems.add(run.busyThreadsAfter + " pool threads still busy");
         if (injected != null && !run.hung) {
             if (run.failure == null) problems.add("saga succeeded although " + injected + " was injected");
             else if (run.failure != injected) {
                 problems.add("failed with " + describe(run.failure) + (isOrCauses(run.failure, injected) ? " (wraps the injected one)" : " instead of the injected " + injected));
             }
         }
+        return check(saga, world, log, run, problems, label);
+    }
+
+    /**
+     * Checks one run whose outcome (null for success, else the failure) must satisfy {@code accepted}.
+     */
+    List<String> check(Saga saga, World world, FaultySagaLog log, Run run, Predicate<Throwable> accepted, String expected, String label) {
+        List<String> problems = new ArrayList<>();
+        if (!run.hung && !accepted.test(run.failure)) {
+            problems.add((run.failure == null ? "succeeded" : "failed with " + describe(run.failure)) + ", expected " + expected);
+        }
+        return check(saga, world, log, run, problems, label);
+    }
+
+    private List<String> check(Saga saga, World world, FaultySagaLog log, Run run, List<String> problems, String label) {
+        if (run.hung) problems.add("completion future did not complete within 5 s");
+        if (run.onCompleteCalls != 1) problems.add("onComplete called " + run.onCompleteCalls + " times");
+        if (run.busyThreadsAfter != 0) problems.add(run.busyThreadsAfter + " pool threads still busy");
+        checkNothingWrittenAfterCompletion(run, problems);
         State state = state(saga, run.entries, problems);
         String abortedStep = run.entries.stream().filter(e -> e.startsWith("Abort:")).map(e -> e.substring(6)).findFirst().orElse(null);
         if (state == State.SUCCEEDED || state == State.ROLLED_BACK) {
@@ -447,6 +551,15 @@ public abstract class SagaFaultMatrixTest {
             problems.add(0, label + " -> " + state + " " + run.entries + " effects " + world.effects);
         }
         return problems;
+    }
+
+    /**
+     * se-2: once a saga reports completion, no walk of it writes to the log any more.
+     */
+    static void checkNothingWrittenAfterCompletion(Run run, List<String> problems) {
+        if (run.entriesAtOnComplete != null && !run.entriesAtOnComplete.equals(run.entries)) {
+            problems.add("written after completion: onComplete saw " + run.entriesAtOnComplete + ", the log then held " + run.entries);
+        }
     }
 
     static String describe(Throwable t) {
@@ -540,6 +653,7 @@ public abstract class SagaFaultMatrixTest {
             if (run.hung) problems.add("completion future did not complete within 5 s");
             if (run.onCompleteCalls != 1) problems.add("onComplete called " + run.onCompleteCalls + " times");
             if (run.busyThreadsAfter != 0) problems.add(run.busyThreadsAfter + " pool threads still busy");
+            checkNothingWrittenAfterCompletion(run, problems);
             if (!run.hung && run.failure == null) problems.add("saga succeeded");
             State state = state(saga, run.entries, problems);
             if (state == State.ROLLED_BACK) problems.add("reported ROLLED_BACK although compensation of " + step + " failed");
@@ -649,6 +763,288 @@ public abstract class SagaFaultMatrixTest {
                 }
             }
             discard(full);
+        }
+        report(violations);
+    }
+
+    // ---- fm-2: faults inside the rollback and in the executor -------------------------------------------------
+
+    @DataProvider(name = "snapshotReadFaults")
+    public Object[][] snapshotReadFaults() {
+        List<Object[]> rows = new ArrayList<>();
+        for (String shape : SHAPES.keySet()) {
+            for (Kind kind : new Kind[]{Kind.RUNTIME, Kind.ERROR}) {
+                rows.add(new Object[]{shape, kind});
+            }
+        }
+        return rows.toArray(new Object[0][]);
+    }
+
+    /**
+     * se-3: the last step aborts, and the rollback's read of the log's entries fails. The saga fails with the read's
+     * failure, the abort suppressed on it, as when a compensating action fails; forward recovery then completes it.
+     */
+    @Test(dataProvider = "snapshotReadFaults")
+    public void snapshotReadFault(String shape, Kind kind) {
+        Saga saga = SHAPES.get(shape);
+        List<String> steps = steps(saga);
+        String aborting = steps.get(steps.size() - 1);
+        List<String> violations = new ArrayList<>();
+        for (int i = 0; i < REPEAT && violations.isEmpty(); i++) {
+            World world = new World();
+            FaultySagaLog log = newLog();
+            String where = shape + "/abort at " + aborting + "/snapshot read/" + kind;
+            Throwable abort = newFault(Kind.ABORT, where);
+            Throwable injected = newFault(kind, where);
+            world.actionFaultBefore.put(aborting, abort);
+            log.failReadOnceAfter(SagaLogEntryType.Abort, injected);
+            Run run = execute(saga, world, log, UUID.randomUUID().toString(), false);
+            List<String> problems = check(saga, world, log, run, injected, where + " run " + i);
+            if (problems.isEmpty() && !Arrays.asList(injected.getSuppressed()).contains(abort)) {
+                problems.add(where + " run " + i + ": the abort is not suppressed on the read failure");
+            }
+            violations.addAll(problems);
+            discard(log);
+        }
+        report(violations);
+    }
+
+    enum Saturation {
+        /**
+         * the pool's one thread is busy when the saga starts: its first walk is rejected
+         */
+        FIRST_WALK,
+        /**
+         * the pool's one thread runs the saga: every further walk, and a rollback's walk, is rejected
+         */
+        LATER_WALK
+    }
+
+    @DataProvider(name = "rejections")
+    public Object[][] rejections() {
+        List<Object[]> rows = new ArrayList<>();
+        for (String shape : SHAPES.keySet()) {
+            for (String runKind : new String[]{"success", "abort"}) {
+                for (Saturation saturation : Saturation.values()) {
+                    rows.add(new Object[]{shape, runKind, saturation});
+                }
+            }
+        }
+        return rows.toArray(new Object[0][]);
+    }
+
+    static boolean isRejection(Throwable t) {
+        return t instanceof RejectedExecutionException;
+    }
+
+    /**
+     * se-4: the executor rejects a walk (one thread, no queue, AbortPolicy). The saga ends, with a defined outcome,
+     * calls onComplete once and leaves no thread busy; a rejected saga fails with the RejectedExecutionException and
+     * forward recovery completes it.
+     */
+    @Test(dataProvider = "rejections")
+    public void rejectedSubmit(String shape, String runKind, Saturation saturation) {
+        Saga saga = SHAPES.get(shape);
+        List<String> steps = steps(saga);
+        List<String> violations = new ArrayList<>();
+        for (int i = 0; i < REPEAT && violations.isEmpty(); i++) {
+            SelectableThreadPoolExectutor small = new SelectableThreadPoolExectutor(1, 1, 60, TimeUnit.SECONDS,
+                    new SynchronousQueue<>(), new ThreadPoolExecutor.AbortPolicy());
+            CountDownLatch release = new CountDownLatch(1);
+            try {
+                if (saturation == Saturation.FIRST_WALK) {
+                    small.submit(() -> {
+                        release.await();
+                        return null;
+                    });
+                }
+                World world = new World();
+                FaultySagaLog log = newLog();
+                String where = shape + "/" + runKind + "/rejected " + saturation;
+                Throwable abort = runKind.equals("abort") ? newFault(Kind.ABORT, where) : null;
+                if (abort != null) {
+                    world.actionFaultBefore.put(steps.get(steps.size() - 1), abort);
+                }
+                Run run = start(small, saga, world, log, UUID.randomUUID().toString(), false);
+                awaitCompletion(run, 5_000);
+                release.countDown();
+                finish(small, log, run);
+                Predicate<Throwable> accepted = saturation == Saturation.FIRST_WALK
+                        ? SagaFaultMatrixTest::isRejection
+                        : f -> f == null && abort == null || f == abort || isRejection(f);
+                violations.addAll(check(saga, world, log, run, accepted,
+                        saturation == Saturation.FIRST_WALK ? "RejectedExecutionException" : "success, the abort or RejectedExecutionException",
+                        where + " run " + i));
+                discard(log);
+            } finally {
+                release.countDown();
+                small.shutdownNow();
+            }
+        }
+        report(violations);
+    }
+
+    @DataProvider(name = "shutdowns")
+    public Object[][] shutdowns() {
+        List<Object[]> rows = new ArrayList<>();
+        for (String shape : SHAPES.keySet()) {
+            for (String runKind : new String[]{"success", "abort"}) {
+                rows.add(new Object[]{shape, runKind});
+            }
+        }
+        return rows.toArray(new Object[0][]);
+    }
+
+    /**
+     * se-4: the executor is shut down with {@code shutdownNow()} at a random point of a saga, and the tasks it returns
+     * are cancelled, as the documentation says. The saga ends, calls onComplete once, and writes nothing after its
+     * completion; no thread of the executor stays busy; an unfinished saga is completed by forward recovery.
+     */
+    @Test(dataProvider = "shutdowns")
+    public void shutdownNowDuringSaga(String shape, String runKind) throws InterruptedException {
+        Saga saga = SHAPES.get(shape);
+        List<String> steps = steps(saga);
+        List<String> violations = new ArrayList<>();
+        for (int i = 0; i < REPEAT && violations.isEmpty(); i++) {
+            SelectableThreadPoolExectutor own = new SelectableThreadPoolExectutor(2, 2, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+            World world = new World();
+            FaultySagaLog log = newLog();
+            for (String step : steps) {
+                world.delayMs.put(step, 40L);
+            }
+            String where = shape + "/" + runKind + "/shutdownNow";
+            if (runKind.equals("abort")) {
+                world.actionFaultBefore.put(steps.get(steps.size() - 1), newFault(Kind.ABORT, where));
+            }
+            Run run = start(own, saga, world, log, UUID.randomUUID().toString(), false);
+            sleep(ThreadLocalRandom.current().nextLong(0, 40L * (steps.size() + 1)));
+            for (Runnable dropped : own.shutdownNow()) {
+                if (dropped instanceof Future) {
+                    ((Future<?>) dropped).cancel(false);
+                }
+            }
+            awaitCompletion(run, 5_000);
+            List<String> problems = new ArrayList<>();
+            if (!own.awaitTermination(2, TimeUnit.SECONDS)) {
+                problems.add(where + " run " + i + ": the executor's threads did not end after shutdownNow");
+            }
+            finish(own, log, run);
+            world.delayMs.clear();
+            problems.addAll(check(saga, world, log, run, f -> true, "any outcome", where + " run " + i));
+            violations.addAll(problems);
+            discard(log);
+        }
+        report(violations);
+    }
+
+    // ---- fm-4: many sagas on a small pool ---------------------------------------------------------------------
+
+    static final int LOAD_SAGAS = Integer.getInteger("matrix.load.sagas", 16);
+    static final int LOAD_THREADS = Integer.getInteger("matrix.load.threads", 6);
+
+    enum Overload {ABORT_POLICY, CALLER_RUNS_POLICY}
+
+    @DataProvider(name = "load")
+    public Object[][] load() {
+        return new Object[][]{{Overload.ABORT_POLICY}, {Overload.CALLER_RUNS_POLICY}};
+    }
+
+    /**
+     * fm-4: {@value #LOAD_SAGAS} sagas of every shape, started at about the same time from four threads, on a pool of
+     * {@value #LOAD_THREADS} threads without a queue, with a fault in most of them. Every saga ends with a defined
+     * outcome, calls onComplete once, and no thread stays busy; a saga the pool could not take fails with
+     * RejectedExecutionException and is completed by forward recovery. A queued pool smaller than the sagas' waiting
+     * walks starves by design (limitations.md, "Thread starvation"), so the pool sheds load instead. With
+     * CallerRunsPolicy (se-5), a walk the pool would run on the submitting thread is rejected instead.
+     */
+    @Test(dataProvider = "load")
+    public void load(Overload overload) throws Exception {
+        List<String> shapes = new ArrayList<>(SHAPES.keySet());
+        List<String> violations = new ArrayList<>();
+        for (int i = 0; i < REPEAT && violations.isEmpty(); i++) {
+            SelectableThreadPoolExectutor small = new SelectableThreadPoolExectutor(LOAD_THREADS, LOAD_THREADS, 60, TimeUnit.SECONDS,
+                    new SynchronousQueue<>(),
+                    overload == Overload.ABORT_POLICY ? new ThreadPoolExecutor.AbortPolicy() : new ThreadPoolExecutor.CallerRunsPolicy());
+            ExecutorService drivers = Executors.newFixedThreadPool(4, r -> {
+                Thread t = new Thread(r, "load-driver");
+                t.setDaemon(true);
+                return t;
+            });
+            try {
+                Random random = new Random(i);
+                List<Saga> sagas = new ArrayList<>();
+                List<World> worlds = new ArrayList<>();
+                List<FaultySagaLog> logs = new ArrayList<>();
+                List<Throwable> injected = new ArrayList<>();
+                List<String> labels = new ArrayList<>();
+                List<Future<Run>> started = new ArrayList<>();
+                for (int k = 0; k < LOAD_SAGAS; k++) {
+                    String shape = shapes.get(k % shapes.size());
+                    Saga saga = SHAPES.get(shape);
+                    List<String> steps = steps(saga);
+                    World world = new World();
+                    for (String step : steps) {
+                        world.delayMs.put(step, (long) random.nextInt(15));
+                    }
+                    String step = steps.get(random.nextInt(steps.size()));
+                    Kind kind = k % 4 == 3 ? null : Kind.values()[k % 3];
+                    String label = overload + "/" + shape + "/" + (kind == null ? "no fault" : step + "/" + kind) + " saga " + k + " run " + i;
+                    Throwable fault = kind == null ? null : newFault(kind, label);
+                    FaultySagaLog log = newLog();
+                    if (fault != null) {
+                        if (random.nextBoolean()) {
+                            world.actionFaultBefore.put(step, fault);
+                        } else if (kind == Kind.ABORT) {
+                            world.actionFaultAfter.put(step, fault);
+                        } else {
+                            log.failOnce(SagaLogEntryType.End, step, fault);
+                        }
+                    }
+                    sagas.add(saga);
+                    worlds.add(world);
+                    logs.add(log);
+                    injected.add(fault);
+                    labels.add(label);
+                    long stagger = random.nextInt(20);
+                    started.add(drivers.submit(() -> {
+                        sleep(stagger);
+                        return start(small, saga, world, log, UUID.randomUUID().toString(), false);
+                    }));
+                }
+                List<Run> runs = new ArrayList<>();
+                long deadline = System.currentTimeMillis() + 10_000;
+                for (int k = 0; k < LOAD_SAGAS; k++) {
+                    Run run;
+                    try {
+                        run = started.get(k).get(Math.max(1, deadline - System.currentTimeMillis()), TimeUnit.MILLISECONDS);
+                        awaitCompletion(run, Math.max(1, deadline - System.currentTimeMillis()));
+                    } catch (TimeoutException e) {
+                        run = null; // executeSaga itself never returned
+                    }
+                    runs.add(run);
+                }
+                for (int k = 0; k < LOAD_SAGAS; k++) {
+                    Run run = runs.get(k);
+                    if (run == null) {
+                        violations.add(labels.get(k) + ": executeSaga did not return within 10 s");
+                        continue;
+                    }
+                    finish(small, logs.get(k), run);
+                    Throwable fault = injected.get(k);
+                    worlds.get(k).delayMs.clear();
+                    violations.addAll(check(sagas.get(k), worlds.get(k), logs.get(k), run,
+                            f -> f == null ? fault == null : f == fault || isRejection(f),
+                            "the injected fault or RejectedExecutionException", labels.get(k)));
+                    discard(logs.get(k));
+                }
+                small.shutdown();
+                if (!small.awaitTermination(2, TimeUnit.SECONDS)) {
+                    violations.add(overload + " run " + i + ": pool threads still busy after shutdown");
+                }
+            } finally {
+                small.shutdownNow();
+                drivers.shutdownNow();
+            }
         }
         report(violations);
     }

@@ -21,7 +21,9 @@ public class PostgresSagaFaultMatrixTest extends SagaFaultMatrixTest {
                 "postgres.driver.port", String.valueOf(postgres.getPort()),
                 "postgres.driver.user", "postgres",
                 "postgres.driver.password", "postgres",
-                "postgres.driver.database", "postgres"));
+                "postgres.driver.database", "postgres",
+                // each open log holds a connection; the load row opens one log per saga at once
+                "connection-pool.max-size", String.valueOf(LOAD_SAGAS + 8)));
     }
 
     @Override
