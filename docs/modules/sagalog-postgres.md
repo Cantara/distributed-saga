@@ -63,10 +63,12 @@ Closing the log unlocks it. So a log is written by one process at a time, cluste
 - Each open log holds one connection from the HikariCP pool for as long as it is open, because the advisory lock
   belongs to that connection. `close()` (also called by `remove(logId)` and `shutdown()`) releases the lock, commits,
   and gives the connection back. Set `connection-pool.max-size` above the number of logs open at the same time
-  (instance-local logs plus the logs of other instances being recovered); when the pool is used up, opening or writing
-  waits for HikariCP's connection timeout and fails.
+  (instance-local logs plus the logs of other instances being recovered). When the pool is used up, opening a log
+  waits once for HikariCP's connection timeout (30 s by default) and fails with a `RuntimeException` whose message
+  gives the pool size and says to raise `connection-pool.max-size`.
 - Every operation runs in a transaction on that connection. On an `SQLException` the log gets a new connection,
-  takes the lock again, and retries the operation once.
+  takes the lock again, and retries the operation once. Failing to get a connection at all
+  (`SQLTransientConnectionException`: the pool is used up, or the database cannot be reached) is not retried.
 - `write` and `truncate` run on the common fork-join pool (`CompletableFuture.supplyAsync`/`runAsync`); the returned
   futures complete when the transaction has committed. The reads run on the calling thread.
 
