@@ -72,6 +72,23 @@
 
     <build>
         <plugins>
+            <!-- Tests only: no main classes, so no jar, nothing installed and nothing deployed. Without skipIfEmpty, a
+                 build that runs the lifecycle twice (Jenkins runs "clean package deploy") fails: the second jar:jar
+                 refuses to replace the empty jar that the first one set as the main artifact. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <skipIfEmpty>true</skipIfEmpty>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-install-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
