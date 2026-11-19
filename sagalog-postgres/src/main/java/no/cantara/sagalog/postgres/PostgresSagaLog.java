@@ -381,7 +381,7 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
         checkNotClosed();
         return runTransaction(connection -> {
             try {
-                String sql = String.format("SELECT entry_id, txid, entry_type, node_id, saga_name, data FROM \"%s\".\"%s\"", sagaLogId.getSchema(), sagaLogId.getTableName());
+                String sql = String.format("SELECT entry_id, txid, entry_type, node_id, saga_name, data FROM \"%s\".\"%s\" ORDER BY entry_id", sagaLogId.getSchema(), sagaLogId.getTableName());
                 try (Statement statement = connection.createStatement()) {
                     try (ResultSet rs = statement.executeQuery(sql)) {
                         List<SagaLogEntry> result = new ArrayList<>();
@@ -404,7 +404,7 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
         return runTransaction(connection ->
         {
             try {
-                String sql = String.format("SELECT entry_id, txid, entry_type, node_id, saga_name, data FROM \"%s\".\"%s\" WHERE txid = ?", sagaLogId.getSchema(), sagaLogId.getTableName());
+                String sql = String.format("SELECT entry_id, txid, entry_type, node_id, saga_name, data FROM \"%s\".\"%s\" WHERE txid = ? ORDER BY entry_id", sagaLogId.getSchema(), sagaLogId.getTableName());
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     ps.setString(1, txId);
                     try (ResultSet rs = ps.executeQuery()) {
