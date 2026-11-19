@@ -30,4 +30,9 @@ public class SagaAdapterGeneric extends Adapter<Object> {
         }
         return result.toString();
     }
+
+    @Override
+    public void executeCompensatingAction(SagaNode sagaNode, Object sagaInput, Object actionOutput) {
+        // nothing to undo in the test; overriding it makes this an adapter with a compensating action
+    }
 }

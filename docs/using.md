@@ -68,6 +68,8 @@ AdapterLoader adapters = new AdapterLoader()
 - `Adapter` serializes with `toString()` and deserializes with the output type's `String` constructor. For any other
   type, implement `SagaAdapter<O>` and return your own `ActionOutputSerializer<O>`.
 - Actions and compensating actions must be idempotent: they can run more than once.
+- `Shipping` is registered without a compensating action, so a rollback leaves its effect in place and writes no
+  entries for it. A compensating action receives `null` as the output when the action started but never ended.
 - An adapter instance is shared by every node and every saga that names it, on many threads: keep it stateless.
 
 The start and end adapters (`SagaStart`, `SagaEnd`) are registered by `AdapterLoader` itself.
@@ -146,11 +148,12 @@ With that adapter, the saga above prints:
 ```
 release reservation-42
 failed with no.cantara.saga.execution.adapter.AbortSagaException: card declined
-Start:S Start:charge-card Start:reserve-stock End:reserve-stock Abort:charge-card Comp:reserve-stock End:E
+Start:S Start:charge-card Start:reserve-stock End:reserve-stock Abort:charge-card CompStart:reserve-stock Comp:reserve-stock End:E
 ```
 
-`reserve-stock` ended, so it is compensated. The aborted node itself is not compensated: it is the action that
-decided to fail. The completion future fails with a `CompletionException` whose cause is the `AbortSagaException`, and
+`reserve-stock` ended and has a compensating action, so it is compensated: `CompStart` before the compensating action,
+`Comp` after. The aborted node itself is not compensated: it is the action that decided to fail. `Shipping` has no
+compensating action; if it had ended, it would get no entries in the rollback and its effect would stay. The completion future fails with a `CompletionException` whose cause is the `AbortSagaException`, and
 `onComplete` receives a result with `isFailure()` true.
 
 Any other exception from an action is *not* rolled back. See [Known limitations](limitations.md#exceptions-other-than-abortsagaexception).
@@ -197,7 +200,7 @@ Start:S Start:reserve-stock End:reserve-stock Start:charge-card End:charge-card 
 - Keep a map from saga name to `Saga` definition, so the log's saga name finds the definition.
 - Logs of other instances (`SagaLogPool.clusterWideLogIds()`) can be recovered too: `connect` or take ownership of
   each, recover, then `remove` the log from the pool so its owner can use it again.
-- Recovery continues forward only. See [Known limitations](limitations.md#recovery-after-a-crash-during-rollback).
+- Recovery continues forward only; the last entry of each node decides. See [saga-execution](modules/saga-execution.md#recovery-mode).
 
 ## 8. Observe execution
 

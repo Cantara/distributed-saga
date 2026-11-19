@@ -27,13 +27,15 @@ widest saga times the number of sagas you run at once.
 ## A compensating action that fails
 
 If a compensating action throws, the rollback stops: the remaining nodes are not compensated, no `End` is written on
-`E`, and the completion future fails with the compensating action's exception, not the abort.
+`E`, and the completion future fails with the compensating action's exception, not the abort. The node's last entry is
+`CompStart`, so forward recovery runs it again, together with every other node whose effect may be undone; the saga
+then ends forward, not rolled back. There is no mode that resumes the rollback instead.
 
 ## Recovery after a crash during rollback
 
-Recovery continues forward only; it does not look at `Abort` or `Comp` entries. If a process stops during a rollback,
-recovery runs the saga forward: it runs the aborted node's action again, and passes on the outputs of nodes that were
-already compensated. Check an unfinished execution's entries for `Abort` before you recover it.
+Recovery continues forward only. After a crash during a rollback it runs again every node whose last entry is
+`CompStart` or `Comp`, and the aborted node, so the saga ends with every effect in place; it does not finish the
+rollback.
 
 ## No timeouts
 

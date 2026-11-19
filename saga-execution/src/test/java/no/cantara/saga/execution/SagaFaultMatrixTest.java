@@ -286,7 +286,8 @@ public class SagaFaultMatrixTest {
             problems.add("End:E is not the last entry");
         }
         boolean allEnded = steps(saga).stream().allMatch(step -> entries.contains("End:" + step));
-        if (allEnded && entries.lastIndexOf("End:E") > lastIndexOfAny(entries, "Abort:", "Comp:")) {
+        if (allEnded && entries.lastIndexOf("End:E") > lastIndexOfAny(entries, "Abort:", "Comp:", "CompStart:")
+                && steps(saga).stream().allMatch(step -> lastOf(entries, step).equals("End"))) {
             return State.SUCCEEDED; // also an aborted run completed by forward recovery
         }
         if (!aborted) {
@@ -309,6 +310,14 @@ public class SagaFaultMatrixTest {
             }
         }
         return problems.isEmpty() ? State.ROLLED_BACK : State.UNDEFINED;
+    }
+
+    static String lastOf(List<String> entries, String step) {
+        String last = "";
+        for (String e : entries) {
+            if (e.endsWith(":" + step)) last = e.substring(0, e.indexOf(':'));
+        }
+        return last;
     }
 
     static int lastIndexOfAny(List<String> entries, String... prefixes) {
@@ -370,7 +379,7 @@ public class SagaFaultMatrixTest {
         }
         if (state == State.UNFINISHED && !run.hung) {
             // forward recovery once the fault is gone
-            List<String> endedBefore = run.entries.stream().filter(e -> e.startsWith("End:")).map(e -> e.substring(4)).collect(Collectors.toList());
+            List<String> endedBefore = steps(saga).stream().filter(step -> lastOf(run.entries, step).equals("End")).collect(Collectors.toList());
             Map<String, Long> doneBefore = new LinkedHashMap<>();
             for (String step : steps(saga)) doneBefore.put(step, world.count("do:" + step));
             Run recovered = execute(saga, world, log, run.executionId, true);
@@ -485,6 +494,15 @@ public class SagaFaultMatrixTest {
             if (!run.hung && run.failure == null) problems.add("saga succeeded");
             State state = state(saga, run.entries, problems);
             if (state == State.ROLLED_BACK) problems.add("reported ROLLED_BACK although compensation of " + step + " failed");
+            if (state == State.UNFINISHED && !run.hung) {
+                // forward recovery reruns every step whose effect may be undone, so all effects end up in place
+                Run recovered = execute(saga, world, log, run.executionId, true);
+                List<String> rp = new ArrayList<>();
+                State after = state(saga, recovered.entries, rp);
+                if (recovered.failure != null) problems.add("recovery failed with " + describe(recovered.failure));
+                if (after != State.SUCCEEDED) problems.add("after recovery " + after + " " + rp + " " + recovered.entries);
+                else checkNetEffects(saga, after, net(world, saga), null, problems);
+            }
             if (!problems.isEmpty()) {
                 problems.add(0, where + " run " + i + " -> " + state + " failed with " + (run.failure == null ? "-" : describe(run.failure)) + " " + run.entries);
             }
@@ -512,11 +530,10 @@ public class SagaFaultMatrixTest {
     }
 
     /**
-     * Finding M1, open: a crash after some steps were compensated, then forward recovery. Recovery skips the
-     * compensated steps (they have End), writes End on E and reports success, while their effects stay undone.
-     * Enable once the behaviour is decided.
+     * Finding M1: a crash during the rollback, then forward recovery. A step whose last entry is CompStart or Comp
+     * (its effect may be undone) is run again, so the saga ends with every step's effect in place.
      */
-    @Test(dataProvider = "crashes", enabled = false)
+    @Test(dataProvider = "crashes")
     public void crashDuringRollback(String shape, String runKind) {
         if (runKind.equals("abort")) {
             crash(shape, runKind, true);
@@ -537,11 +554,10 @@ public class SagaFaultMatrixTest {
             List<SagaLogEntry> written = full.readEntries(run.executionId).collect(Collectors.toList());
             for (int cut = 1; cut < written.size(); cut++) {
                 List<SagaLogEntry> prefix = written.subList(0, cut);
-                if (!duringRollback && prefix.stream().anyMatch(e -> e.getEntryType() == SagaLogEntryType.Comp)) {
-                    continue; // a crash during the rollback itself: see crashDuringRollback
-                }
-                if (duringRollback && prefix.stream().noneMatch(e -> e.getEntryType() == SagaLogEntryType.Comp)) {
-                    continue;
+                boolean rollbackStarted = prefix.stream().anyMatch(e -> e.getEntryType() == SagaLogEntryType.CompStart
+                        || e.getEntryType() == SagaLogEntryType.Comp);
+                if (rollbackStarted != duringRollback) {
+                    continue; // crashDuringRollback covers the cuts inside the rollback
                 }
                 FaultySagaLog log = newLog();
                 for (SagaLogEntry e : prefix) {
@@ -562,13 +578,16 @@ public class SagaFaultMatrixTest {
                 if (state == State.SUCCEEDED) {
                     Map<String, Long> net = net(after, saga);
                     for (String step : steps) {
-                        long before = (cutEntries.contains("End:" + step) ? 1 : 0) - cutEntries.stream().filter(("Comp:" + step)::equals).count();
+                        // effect left by the run before the crash, by the cut log: ended, then possibly undone by a
+                        // compensation that started (a compensation that started may or may not have finished)
+                        boolean undone = cutEntries.contains("CompStart:" + step) || cutEntries.contains("Comp:" + step);
+                        long before = cutEntries.contains("End:" + step) && !undone ? 1 : 0;
                         net.merge(step, before, Long::sum);
                     }
                     checkNetEffects(saga, state, net, null, problems);
                 }
                 for (String step : steps) {
-                    if (cutEntries.contains("End:" + step) && after.count("do:" + step) > 0) {
+                    if (lastOf(cutEntries, step).equals("End") && after.count("do:" + step) > 0) {
                         problems.add("recovery ran " + step + " again although it had ended");
                     }
                 }

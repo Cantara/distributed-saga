@@ -12,7 +12,6 @@ import no.cantara.sagalog.SagaLogEntry;
 import no.cantara.sagalog.SagaLogEntryType;
 
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -132,21 +131,20 @@ public class SagaExecution {
                 postAction.accept(new SagaExecutionTraversalContext(ste.outputByNode, ste.ancestors, ste.node, adapter, null));
                 return null;
             }
-            List<SagaLogEntry> sagaLogEntries = recoverySagaLogEntriesBySagaNodeId.get(ste.node.id);
-            if (sagaLogEntries == null || sagaLogEntries.isEmpty()) {
-                sagaLog.write(sagaLog.builder().startAction(executionId, ste.node.id)).join();
-            }
-            if (sagaLogEntries != null && sagaLogEntries.stream().anyMatch(e -> SagaLogEntryType.End == e.getEntryType())) {
-                // action was already executed, return output from saga-log
-                Optional<String> optionalSerializedOutput = sagaLogEntries.stream()
-                        .filter(e -> SagaLogEntryType.End == e.getEntryType())
-                        .findFirst()
-                        .map(sle -> sle.getJsonData());
+            // the last entry of the node decides its state: an execution can hold several rounds of the same node
+            SagaLogEntryType lastEntryType = lastEntryType(recoverySagaLogEntriesBySagaNodeId.get(ste.node.id));
+            if (lastEntryType == SagaLogEntryType.End) {
+                // the action has ended and was not undone since: pass on its latest output
+                Optional<String> optionalSerializedOutput = lastEndOutput(recoverySagaLogEntriesBySagaNodeId.get(ste.node.id));
                 postAction.accept(new SagaExecutionTraversalContext(ste.outputByNode, ste.ancestors, ste.node, adapter, optionalSerializedOutput.orElse(null)));
                 Object output = optionalSerializedOutput
                         .map(jsonData -> adapter.serializer().deserialize(jsonData))
                         .orElse(null);
                 return output;
+            }
+            if (lastEntryType != SagaLogEntryType.Start) {
+                // a new round: not started, or aborted, or (being) compensated
+                sagaLog.write(sagaLog.builder().startAction(executionId, ste.node.id)).join();
             }
             Object actionOutput;
             try {
@@ -229,28 +227,22 @@ public class SagaExecution {
             }
             SagaAdapter adapter = adapterLoader.load(ste.node);
             List<SagaLogEntry> sagaLogEntries = sagaLogEntriesBySagaNodeId.get(ste.node.id);
-            if (sagaLogEntries == null || sagaLogEntries.isEmpty()) {
-                return null;
+            SagaLogEntryType lastEntryType = lastEntryType(sagaLogEntries);
+            if (lastEntryType == null || lastEntryType == SagaLogEntryType.Abort || lastEntryType == SagaLogEntryType.Comp) {
+                return null; // never started, the aborting node itself, or already compensated
             }
-            if (sagaLogEntries != null && sagaLogEntries.stream().anyMatch(e -> SagaLogEntryType.Abort == e.getEntryType())) {
-                return null; // abort action
+            if (!adapter.hasCompensatingAction()) {
+                return null; // nothing to undo; its effect stays and no compensation is logged
             }
-            Object actionOutput;
-            if (sagaLogEntries != null && sagaLogEntries.stream().anyMatch(e -> SagaLogEntryType.End == e.getEntryType())) {
-                // action was already executed, use its output to cancel
-                actionOutput = sagaLogEntries.stream()
-                        .filter(e -> SagaLogEntryType.End == e.getEntryType())
-                        .findFirst()
-                        .map(sle -> sle.getJsonData())
+            Object actionOutput = null; // the action started but did not end: it may or may not have run
+            if (lastEntryType == SagaLogEntryType.End || lastEntryType == SagaLogEntryType.CompStart) {
+                actionOutput = lastEndOutput(sagaLogEntries)
                         .map(jsonData -> adapter.serializer().deserialize(jsonData))
                         .orElse(null);
-            } else {
-                // Unknown whether action was executed or not, execute it (possibly again)
-                // to ensure consistency and to update saga-log with end-action and output.
-                Map<SagaNode, Object> dependeesOutput = getDependeesOutputByNode(sagaLogEntriesBySagaNodeId, ste.node, adapter);
-                actionOutput = adapter.executeAction(ste.node, sagaInput, dependeesOutput);
-                String serializedActionOutput = adapter.serializer().serialize(actionOutput); // safe unchecked call
-                sagaLog.write(sagaLog.builder().endAction(executionId, ste.node.id, serializedActionOutput)).join();
+            }
+            if (lastEntryType != SagaLogEntryType.CompStart) {
+                // written before the compensating action runs, so a crash during it leaves the node marked as undone
+                sagaLog.write(sagaLog.builder().compStart(executionId, ste.node.id)).join();
             }
             adapter.executeCompensatingAction(ste.node, sagaInput, actionOutput); // safe unchecked call
             sagaLog.write(sagaLog.builder().compDone(executionId, ste.node.id)).join();
@@ -258,19 +250,34 @@ public class SagaExecution {
         });
     }
 
-    private Map<SagaNode, Object> getDependeesOutputByNode
-            (Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId, SagaNode node, SagaAdapter adapter) {
-        Map<SagaNode, Object> dependeesOutputByNode = new LinkedHashMap<>();
-        for (SagaNode dependeeNode : node.incoming) {
-            List<SagaLogEntry> dependeeEntries = sagaLogEntriesBySagaNodeId.getOrDefault(dependeeNode.id, List.of());
-            Object dependeeOutput = dependeeEntries.stream()
-                    .filter(e -> SagaLogEntryType.End == e.getEntryType())
-                    .findFirst()
-                    .map(sle -> sle.getJsonData())
-                    .map(jsonData -> adapter.serializer().deserialize(jsonData))
-                    .orElse(null);
-            dependeesOutputByNode.put(dependeeNode, dependeeOutput);
+    /**
+     * @return the type of the last entry of a node (of the types that describe its state), or null if it has none
+     */
+    static SagaLogEntryType lastEntryType(List<SagaLogEntry> nodeEntries) {
+        if (nodeEntries == null) {
+            return null;
         }
-        return dependeesOutputByNode;
+        SagaLogEntryType last = null;
+        for (SagaLogEntry entry : nodeEntries) {
+            if (entry.getEntryType() != SagaLogEntryType.Ignore) {
+                last = entry.getEntryType();
+            }
+        }
+        return last;
+    }
+
+    /**
+     * @return the output of the last End entry of a node
+     */
+    static Optional<String> lastEndOutput(List<SagaLogEntry> nodeEntries) {
+        String output = null;
+        if (nodeEntries != null) {
+            for (SagaLogEntry entry : nodeEntries) {
+                if (entry.getEntryType() == SagaLogEntryType.End) {
+                    output = entry.getJsonData();
+                }
+            }
+        }
+        return Optional.ofNullable(output);
     }
 }

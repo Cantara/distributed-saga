@@ -43,7 +43,11 @@ node. Adapters implement `SagaAdapter<OUTPUT>` (`no.cantara.saga.execution.adapt
 - `name()`: the name nodes refer to. It is stored in serialized sagas, so changing it breaks existing definitions.
 - `executeAction(node, sagaInput, dependeesOutput)`: the action. It receives the saga's input and the outputs of the
   nodes it depends on, and returns its own output.
-- `executeCompensatingAction(node, sagaInput, actionOutput)`: undoes the action, given the action's output.
+- `executeCompensatingAction(node, sagaInput, actionOutput)`: undoes the action, given the action's output (`null`
+  when the action started but never ended: it may or may not have run). Must be safe to call more than once.
+- `hasCompensatingAction()`: whether the adapter has a compensating action. Rollback runs and logs only those that
+  do; the effect of a step without one stays. `Adapter` answers it from how it was built (see
+  [saga-execution](modules/saga-execution.md#adapters)); a direct `SagaAdapter` implementation must answer it.
 - `serializer()`: turns the output into text for the saga log and back.
 
 Adapters must be stateless and thread-safe: one adapter instance serves every node that names it, in every saga, on
@@ -66,7 +70,7 @@ The saga log is an append-only log of `SagaLogEntry` records (`no.cantara.sagalo
 |---|---|
 | `id` | A `SagaLogEntryId`, chosen by the log implementation; increases in write order within one log |
 | `executionId` | The id of one execution of a saga, chosen by the caller |
-| `entryType` | `Start`, `End`, `Abort`, `Comp` or `Ignore` |
+| `entryType` | `Start`, `End`, `Abort`, `CompStart`, `Comp` or `Ignore` |
 | `nodeId` | The node the entry is about (`S` and `E` for the saga itself) |
 | `sagaName` | Set on the saga's first entry only |
 | `jsonData` | The saga input (first entry) or an action's serialized output (`End` of a node); despite the name, any text |
@@ -79,6 +83,7 @@ One execution writes this sequence:
 | Before each action | `Start` on the node |
 | After each action | `End` on the node, with the serialized output |
 | An action aborts | `Abort` on that node |
+| Before each compensating action | `CompStart` on the node |
 | After each compensating action | `Comp` on the node |
 | The saga is finished, after success or after rollback | `End` on `E` |
 
@@ -112,10 +117,13 @@ The caller can wait for either future: the handoff future for "the saga is safel
 An action that must fail the whole saga throws `AbortSagaException`. The library then:
 
 1. writes `Abort` on that node and stops the forward walk,
-2. walks the graph backwards from `E`, and for every node the log shows as started runs the compensating action and
-   writes `Comp`. A node is compensated only after the nodes that depend on it have been compensated. A node that
-   ended is compensated with its logged output. A node that started but did not end is run again first (it may or
-   may not have run), then compensated.
+2. walks the graph backwards from `E`. For every node whose adapter has a compensating action and whose last entry is
+   `Start` or `End` (or `CompStart`, a compensation interrupted earlier), it writes `CompStart`, runs the compensating
+   action and writes `Comp`. A node is compensated only after the nodes that depend on it have been compensated. A
+   node that ended is compensated with the output of its last `End`. A node that started but did not end is
+   compensated with a `null` output; its action is not run again. A node whose last entry is `Abort` (the aborting
+   node) or `Comp` is not compensated, and a node whose adapter has no compensating action gets no entries: its
+   effect stays.
 3. writes `End` on `E`, calls `onComplete` with a failure result, and completes the completion future exceptionally
    with the `AbortSagaException`.
 
@@ -126,12 +134,16 @@ Exceptions other than `AbortSagaException` are not rolled back. See [Known limit
 If a process stops in the middle of a saga, the log holds an execution without an `End` entry on `E`. *Recovery* runs
 that execution again with `recovery = true`, the same `executionId` and the original input:
 
-- nodes with an `End` entry are not run again; their logged output is used,
-- nodes with only a `Start` entry, and nodes not started, are run.
+- the *last* entry of a node decides, since an execution can hold several rounds of the same node (run, compensated,
+  run again);
+- a node whose last entry is `End` is not run again; the output of that `End` is used;
+- every other node runs: not started, last entry `Start` (it may or may not have run), `Abort`, or `CompStart`/`Comp`
+  (its effect may have been undone). A new `Start` is written unless the last entry already is one.
 
 The library does not look for unfinished sagas itself. The application reads the logs it owns (or all logs of the
 cluster), finds unfinished executions, maps the saga name to its `Saga` definition, deserializes the input, and calls
-`executeSaga` again. Recovery always continues forward. See [Using the library](using.md#7-recover-unfinished-sagas)
+`executeSaga` again. Recovery always continues forward, also after a crash during a rollback: the steps that were
+(being) compensated are run again. See [Using the library](using.md#7-recover-unfinished-sagas)
 and [Known limitations](limitations.md).
 
 ## What the library guarantees, and what it does not
@@ -141,8 +153,10 @@ Guaranteed:
 - A node runs only after all nodes it depends on have completed.
 - Each step is in the saga log before and after it runs; the `Start` entry on `S` is written before the handoff
   future completes.
-- After an `AbortSagaException`, every node that ended is compensated, in reverse dependency order, before the
-  saga reports failure.
+- After an `AbortSagaException`, every node that started and has a compensating action is compensated, in reverse
+  dependency order, before the saga reports failure.
+- A crash at any point, followed by forward recovery, ends with every step's effect in place: a step is skipped only
+  if its last entry is `End`.
 - The completion future completes only after `onComplete` has returned.
 - Within one log, entries are read back in the order they were written.
 
@@ -151,6 +165,7 @@ Not guaranteed:
 - Exactly-once execution. An action can run more than once, for example when recovery finds a node started but not
   ended. Actions and compensating actions must be idempotent.
 - Isolation. Other parties see the intermediate state while a saga runs.
-- Handling of failures other than `AbortSagaException`, timeouts, or a compensating action that fails.
+- Rollback for failures other than `AbortSagaException`, and timeouts. A compensating action that fails stops the
+  rollback and leaves the saga for forward recovery.
 
 See [Known limitations](limitations.md) for the details.

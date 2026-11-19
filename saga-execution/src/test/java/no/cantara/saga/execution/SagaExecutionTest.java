@@ -183,7 +183,7 @@ public class SagaExecutionTest {
                     } else {
                         if (nodeEntries.stream().anyMatch(sle -> SagaLogEntryType.End == sle.getEntryType())
                                 && nodeEntries.stream().anyMatch(sle -> SagaLogEntryType.Comp == sle.getEntryType())) {
-                            assertEquals(nodeEntries.size(), 3); // {Start, End, Comp}
+                            assertEquals(nodeEntries.size(), 4); // {Start, End, CompStart, Comp}
                         } else {
                             Assert.fail(String.format("Node %s has start entry, it does not have abort, but does not have both End and Comp entry", entry.getKey()));
                         }

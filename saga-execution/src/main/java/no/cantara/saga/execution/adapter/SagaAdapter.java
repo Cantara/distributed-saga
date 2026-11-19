@@ -46,7 +46,19 @@ public interface SagaAdapter<OUTPUT> {
      * @param sagaInput    the original request data associated with this saga.
      * @param actionOutput the output from executing the {@link #executeAction(SagaNode, Object, Map<SagaNode, Object>)} method.
      */
+    /**
+     * Undoes the effect of the action. Called during rollback only if {@link #hasCompensatingAction()} is true, for a
+     * node whose action has ended (with its logged output) or whose action started but never ended (with a
+     * {@code null} output: the action may or may not have run). Must be safe to call more than once.
+     */
     void executeCompensatingAction(SagaNode sagaNode, Object sagaInput, OUTPUT actionOutput);
+
+    /**
+     * Whether this adapter has a compensating action. Rollback runs, and logs ({@code CompStart}, {@code Comp}), only
+     * the compensating actions of adapters that have one; the effect of an adapter without one stays, and forward
+     * recovery treats its node as done. There is no default: every adapter must answer.
+     */
+    boolean hasCompensatingAction();
 
     /**
      * @return a serializer than can be used to serialize and de-serialize any object output
