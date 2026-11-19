@@ -44,6 +44,7 @@ public class FileSagaLogTest {
         Path path = logId.getPath();
         try {
             Files.deleteIfExists(path);
+            Files.deleteIfExists(FileSagaLog.lockPath(path));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -133,11 +134,63 @@ public class FileSagaLogTest {
 
     private void checkSerializationAndDeserialization(FileSagaLog sagaLog, SagaLogEntryBuilder builder) {
         SagaLogEntry input = sagaLog.write(builder).join();
-        byte[] serializedInput = sagaLog.serialize(input);
-        SagaLogEntry output = sagaLog.deserialize(serializedInput);
+        byte[] serializedInput = sagaLog.codec.serialize(input);
+        SagaLogEntry output = sagaLog.codec.deserialize(serializedInput);
         assertEquals(output, input);
-        byte[] serializedOutput = sagaLog.serialize(output);
+        byte[] serializedOutput = sagaLog.codec.serialize(output);
         assertEquals(serializedOutput, serializedInput);
     }
 
+    /**
+     * Writes, reads and truncates on one log from several threads: every write succeeds with its own id, and the
+     * entries stay in write order.
+     */
+    @Test
+    public void thatConcurrentWritesReadsAndTruncatesAreSerialised() throws Exception {
+        int writers = 4;
+        int writesEach = 100;
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(writers + 2);
+        try {
+            java.util.concurrent.ConcurrentLinkedQueue<SagaLogEntry> written = new java.util.concurrent.ConcurrentLinkedQueue<>();
+            java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean();
+            List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+            for (int w = 0; w < writers; w++) {
+                String executionId = "e" + w;
+                futures.add(executor.submit(() -> {
+                    for (int i = 0; i < writesEach; i++) {
+                        written.add(sagaLog.write(sagaLog.builder().startAction(executionId, "n" + i)).join());
+                    }
+                }));
+            }
+            java.util.concurrent.Future<?> reader = executor.submit(() -> {
+                while (!done.get()) {
+                    List<SagaLogEntry> entries = sagaLog.readIncompleteSagas().collect(Collectors.toList());
+                    for (int i = 1; i < entries.size(); i++) {
+                        long previous = ((FileSagaLogEntryId) entries.get(i - 1).getId()).id();
+                        long current = ((FileSagaLogEntryId) entries.get(i).getId()).id();
+                        if (current <= previous) {
+                            throw new AssertionError("out of order: " + previous + " then " + current);
+                        }
+                    }
+                }
+            });
+            java.util.concurrent.Future<?> truncator = executor.submit(() -> {
+                while (!done.get()) {
+                    SagaLogEntry some = written.peek();
+                    if (some != null) {
+                        sagaLog.truncate(some.getId()).join();
+                    }
+                }
+            });
+            for (java.util.concurrent.Future<?> future : futures) {
+                future.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            }
+            done.set(true);
+            reader.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            truncator.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(written.stream().map(SagaLogEntry::getId).distinct().count(), (long) writers * writesEach);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
 }

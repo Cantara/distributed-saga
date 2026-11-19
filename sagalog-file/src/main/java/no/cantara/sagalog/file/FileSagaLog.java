@@ -5,95 +5,96 @@ import no.cantara.sagalog.SagaLogBusyException;
 import no.cantara.sagalog.SagaLogEntry;
 import no.cantara.sagalog.SagaLogEntryBuilder;
 import no.cantara.sagalog.SagaLogEntryId;
-import no.cantara.sagalog.SagaLogEntryType;
 import no.cantara.sagalog.SagaLogId;
 import no.cantara.sagalog.file.queue.QueueFile;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
-public class FileSagaLog implements SagaLog, AutoCloseable {
+/**
+ * A saga log in one queue file. Writes, truncates, reads and {@link #close()} of one log are serialised by the queue
+ * file's monitor. {@code write} and {@code truncate} report every failure through the returned future; the reads
+ * throw.
+ */
+class FileSagaLog implements SagaLog, AutoCloseable {
 
     private final FileSagaLogId sagaLogId;
-    private final AtomicLong nextId = new AtomicLong(0);
+    private final Path path;
+    final FileSagaLogEntryCodec codec;
     private final QueueFile queueFile;
-    private final FileChannel lockChannel;
-    private final FileLock lock;
+    private final FileSagaLogLock lock;
+
+    // guarded by queueFile
+    private long nextId;
+    private long persistedNextId;
+    private boolean closed;
 
     /**
      * Opens the log, holding an exclusive lock on its lock file ({@code <log file>.lock}) until {@link #close()}.
      *
      * @throws SagaLogBusyException if another process, or another open log in this process, holds the lock
+     * @throws UncheckedIOException if the log cannot be opened or read
      */
-    public FileSagaLog(SagaLogId _sagaLogId) throws SagaLogBusyException {
+    FileSagaLog(SagaLogId _sagaLogId) throws SagaLogBusyException {
         this.sagaLogId = (FileSagaLogId) _sagaLogId;
-        Path path = sagaLogId.getPath();
-        FileChannel channel = null;
-        FileLock fileLock = null;
+        this.path = sagaLogId.getPath();
+        this.codec = new FileSagaLogEntryCodec(path);
+        FileSagaLogLock fileLock = null;
         QueueFile file = null;
         try {
-            channel = FileChannel.open(lockPath(path), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-            try {
-                fileLock = channel.tryLock();
-            } catch (OverlappingFileLockException e) {
-                fileLock = null; // held by another open log in this process
-            }
-            if (fileLock == null) {
-                throw new SagaLogBusyException("Saga-log is in use by another process or another open log: " + path);
-            }
+            boolean newFile = !Files.exists(path) || !Files.exists(lockPath(path));
+            fileLock = FileSagaLogLock.acquire(path);
             file = new QueueFile.Builder(path.toFile()).build();
-            // continue after the highest id in the file, so ids stay unique across restarts
+            if (newFile) {
+                Directories.sync(path.getParent()); // the new file names are durable before the first entry is
+            }
+            // continue after the highest id in the file, and after every id handed out before the log was emptied
             long maxId = -1;
             for (byte[] bytes : file) {
-                maxId = Math.max(maxId, ((FileSagaLogEntryId) deserialize(bytes).getId()).id);
+                maxId = Math.max(maxId, codec.readId(bytes));
             }
-            nextId.set(maxId + 1);
-        } catch (IOException e) {
-            closeQuietly(file, fileLock, channel);
-            throw new RuntimeException(e);
-        } catch (RuntimeException e) {
-            closeQuietly(file, fileLock, channel);
-            throw e;
+            long kept = fileLock.readNextId();
+            this.nextId = Math.max(maxId + 1, kept);
+            this.persistedNextId = kept;
+        } catch (Throwable t) {
+            closeAfterFailure(t, file, fileLock);
+            if (t instanceof IOException e) { // also thrown, undeclared, by the queue file's iterator
+                throw new UncheckedIOException("Cannot open saga-log " + path, e);
+            }
+            if (t instanceof RuntimeException e) {
+                throw e;
+            }
+            if (t instanceof Error e) {
+                throw e;
+            }
+            throw new IllegalStateException("Cannot open saga-log " + path, t);
         }
-        this.lockChannel = channel;
         this.lock = fileLock;
         this.queueFile = file;
     }
 
-    static Path lockPath(Path logPath) {
-        return logPath.resolveSibling(logPath.getFileName() + ".lock");
+    private static void closeAfterFailure(Throwable primary, AutoCloseable... resources) {
+        for (AutoCloseable resource : resources) {
+            if (resource != null) {
+                try {
+                    resource.close();
+                } catch (Exception e) {
+                    primary.addSuppressed(e);
+                }
+            }
+        }
     }
 
-    private static void closeQuietly(QueueFile file, FileLock fileLock, FileChannel channel) {
-        try {
-            if (file != null) file.close();
-        } catch (IOException ignored) {
-        }
-        try {
-            if (fileLock != null) fileLock.release();
-        } catch (IOException ignored) {
-        }
-        try {
-            if (channel != null) channel.close();
-        } catch (IOException ignored) {
-        }
+    static Path lockPath(Path logPath) {
+        return FileSagaLogLock.lockPath(logPath);
     }
 
     @Override
@@ -101,74 +102,143 @@ public class FileSagaLog implements SagaLog, AutoCloseable {
         return sagaLogId;
     }
 
+    /**
+     * Writes the entry, durably, before the returned future completes. The log assigns the id, unless the builder
+     * already has one; an id given that way must be greater than every id in the log, or {@code truncate(id)} and the
+     * ids assigned after a restart can go wrong. Ids assigned later follow it.
+     */
     @Override
     public CompletableFuture<SagaLogEntry> write(SagaLogEntryBuilder builder) {
         synchronized (queueFile) {
-            if (builder.id() == null) {
-                builder.id(new FileSagaLogEntryId(nextId.getAndIncrement()));
-            }
-            SagaLogEntry entry = builder.build();
             try {
-                queueFile.add(serialize(entry));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+                checkOpen();
+                if (builder.id() == null) {
+                    builder.id(new FileSagaLogEntryId(nextId));
+                }
+                SagaLogEntry entry = builder.build();
+                queueFile.add(codec.serialize(entry));
+                nextId = Math.max(nextId, ((FileSagaLogEntryId) entry.getId()).id() + 1);
+                return CompletableFuture.completedFuture(entry);
+            } catch (Exception e) {
+                return CompletableFuture.failedFuture(translate("Cannot write to saga-log ", e));
             }
-            return CompletableFuture.completedFuture(entry);
         }
     }
 
     @Override
     public CompletableFuture<Void> truncate(SagaLogEntryId id) {
         synchronized (queueFile) {
-            Iterator<byte[]> iterator = queueFile.iterator();
-            int n = 0;
-            while (iterator.hasNext()) {
-                SagaLogEntry entry = deserialize(iterator.next());
-                n++;
-                if (id.equals(entry.getId())) {
-                    try {
-                        queueFile.remove(n);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                    return CompletableFuture.completedFuture(null);
+            try {
+                checkOpen();
+                if (!(id instanceof FileSagaLogEntryId fileId)) {
+                    return CompletableFuture.completedFuture(null); // no entry of this log has it
                 }
+                long target = fileId.id();
+                int n = 0;
+                for (byte[] bytes : queueFile) {
+                    n++;
+                    if (codec.readId(bytes) == target) {
+                        if (n == queueFile.size()) {
+                            persistNextId(); // the log becomes empty
+                        }
+                        queueFile.remove(n);
+                        break;
+                    }
+                }
+                return CompletableFuture.completedFuture(null);
+            } catch (Exception e) {
+                return CompletableFuture.failedFuture(translate("Cannot truncate saga-log ", e));
             }
         }
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<Void> truncate() {
         synchronized (queueFile) {
             try {
+                checkOpen();
+                persistNextId();
                 queueFile.clear();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+                return CompletableFuture.completedFuture(null);
+            } catch (Exception e) {
+                return CompletableFuture.failedFuture(translate("Cannot truncate saga-log ", e));
             }
         }
-        return CompletableFuture.completedFuture(null);
     }
 
+    /**
+     * Keeps the next id in the lock file before the log is emptied, so that ids stay unique after a restart.
+     */
+    private void persistNextId() throws IOException {
+        if (nextId != persistedNextId) {
+            lock.writeNextId(nextId);
+            persistedNextId = nextId;
+        }
+    }
+
+    /**
+     * @throws IllegalStateException if the log is closed
+     * @throws UncheckedIOException  if the log cannot be read
+     */
     @Override
     public Stream<SagaLogEntry> readIncompleteSagas() {
-        List<byte[]> list = new ArrayList<>();
-        synchronized (queueFile) {
-            for (byte[] bytes : queueFile) {
-                list.add(bytes);
-            }
-        }
-        return list.stream().map(this::deserialize);
+        return readAll().stream().map(codec::deserialize);
     }
 
+    /**
+     * @throws IllegalStateException if the log is closed
+     * @throws UncheckedIOException  if the log cannot be read
+     */
     @Override
     public Stream<SagaLogEntry> readEntries(String executionId) {
-        return readIncompleteSagas().filter(entry -> executionId.equals(entry.getExecutionId()));
+        byte[] wanted = executionId.getBytes(StandardCharsets.UTF_8);
+        return readAll().stream()
+                .filter(bytes -> codec.mayHaveExecutionId(bytes, wanted))
+                .map(codec::deserialize)
+                .filter(entry -> executionId.equals(entry.getExecutionId()));
+    }
+
+    /**
+     * Copies every element under the monitor; they are decoded after it is released.
+     */
+    private List<byte[]> readAll() {
+        List<byte[]> list = new ArrayList<>();
+        synchronized (queueFile) {
+            checkOpen();
+            try {
+                for (byte[] bytes : queueFile) {
+                    list.add(bytes);
+                }
+            } catch (Exception e) {
+                throw translate("Cannot read saga-log ", e);
+            }
+        }
+        return list;
+    }
+
+    private void checkOpen() {
+        if (closed) {
+            throw new IllegalStateException("Saga-log is closed: " + path);
+        }
+    }
+
+    /**
+     * An {@link IOException}, which the queue file's iterator throws without declaring it, becomes an
+     * {@link UncheckedIOException} naming the operation and the file; an unchecked exception stays as it is.
+     */
+    private RuntimeException translate(String operation, Exception e) {
+        if (e instanceof IOException io) {
+            return new UncheckedIOException(operation + path, io);
+        }
+        if (e instanceof RuntimeException re) {
+            return re;
+        }
+        return new IllegalStateException(operation + path, e);
     }
 
     @Override
     public String toString(SagaLogEntryId id) {
-        return String.valueOf(((FileSagaLogEntryId) id).id);
+        return String.valueOf(((FileSagaLogEntryId) id).id());
     }
 
     @Override
@@ -179,7 +249,7 @@ public class FileSagaLog implements SagaLog, AutoCloseable {
     @Override
     public byte[] toBytes(SagaLogEntryId id) {
         byte[] bytes = new byte[8];
-        ByteBuffer.wrap(bytes).putLong(((FileSagaLogEntryId) id).id);
+        ByteBuffer.wrap(bytes).putLong(((FileSagaLogEntryId) id).id());
         return bytes;
     }
 
@@ -188,85 +258,24 @@ public class FileSagaLog implements SagaLog, AutoCloseable {
         return new FileSagaLogEntryId(ByteBuffer.wrap(idBytes).getLong());
     }
 
+    /**
+     * Closes the log and releases its lock. A second call does nothing. Waits for a running write, truncate or read of
+     * this log. The first failure is thrown, with any later one suppressed.
+     */
     @Override
     public void close() throws IOException {
-        try {
-            queueFile.close();
-        } finally {
+        synchronized (queueFile) {
+            if (closed) {
+                return;
+            }
+            closed = true;
             try {
-                lock.release();
-            } finally {
-                lockChannel.close();
+                queueFile.close();
+            } catch (Throwable t) {
+                closeAfterFailure(t, lock);
+                throw t;
             }
+            lock.close();
         }
-    }
-
-    /**
-     * Format version of an entry record; the first byte of every queue element.
-     */
-    static final byte FORMAT_VERSION = 2;
-
-    /**
-     * An entry as one queue element: the format version, the id, then executionId, entry type, nodeId, sagaName and
-     * data, each as a length-prefixed UTF-8 string (length -1 for null). Any text is stored as it is.
-     */
-    byte[] serialize(SagaLogEntry entry) {
-        try {
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream(64);
-            DataOutputStream out = new DataOutputStream(bytes);
-            out.writeByte(FORMAT_VERSION);
-            out.writeLong(((FileSagaLogEntryId) entry.getId()).id);
-            writeString(out, entry.getExecutionId());
-            writeString(out, entry.getEntryType().name());
-            writeString(out, entry.getNodeId());
-            writeString(out, entry.getSagaName());
-            writeString(out, entry.getJsonData());
-            out.flush();
-            return bytes.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    SagaLogEntry deserialize(byte[] bytes) {
-        try {
-            DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes));
-            byte version = in.readByte();
-            if (version != FORMAT_VERSION) {
-                throw new IllegalStateException(String.format("Saga-log %s holds an entry in an unsupported format "
-                        + "(version byte %d, expected %d). Logs written before 2.1.0 cannot be read: let their sagas "
-                        + "finish with the old version, or delete the log file.", sagaLogId.getPath(), version, FORMAT_VERSION));
-            }
-            SagaLogEntryBuilder builder = builder();
-            builder.id(new FileSagaLogEntryId(in.readLong()));
-            builder.executionId(readString(in));
-            builder.entryType(SagaLogEntryType.valueOf(readString(in)));
-            builder.nodeId(readString(in));
-            builder.sagaName(readString(in));
-            builder.jsonData(readString(in));
-            return builder.build();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Corrupt saga-log entry in " + sagaLogId.getPath(), e);
-        }
-    }
-
-    private static void writeString(DataOutputStream out, String value) throws IOException {
-        if (value == null) {
-            out.writeInt(-1);
-            return;
-        }
-        byte[] utf8 = value.getBytes(StandardCharsets.UTF_8);
-        out.writeInt(utf8.length);
-        out.write(utf8);
-    }
-
-    private static String readString(DataInputStream in) throws IOException {
-        int length = in.readInt();
-        if (length == -1) {
-            return null;
-        }
-        byte[] utf8 = new byte[length];
-        in.readFully(utf8);
-        return new String(utf8, StandardCharsets.UTF_8);
     }
 }

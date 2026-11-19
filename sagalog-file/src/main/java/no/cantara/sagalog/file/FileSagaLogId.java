@@ -21,9 +21,25 @@ class FileSagaLogId implements SagaLogId {
         if (logName == null) {
             throw new IllegalArgumentException("logName cannot be null");
         }
+        checkFileNamePart("clusterInstanceId", clusterInstanceId);
+        checkFileNamePart("logName", logName);
+        if ((clusterInstanceId + SEPARATOR).indexOf(SEPARATOR) != clusterInstanceId.length()) {
+            throw new IllegalArgumentException(String.format("clusterInstanceId cannot contain or end in a part of the separator \"%s\": %s", SEPARATOR, clusterInstanceId));
+        }
         this.parentFolder = parentFolder.toAbsolutePath().normalize();
         this.clusterInstanceId = clusterInstanceId;
         this.logName = logName;
+    }
+
+    private static final String SEPARATOR = ".--.";
+
+    /**
+     * A part of the file name must stay in the folder: no path separator, no NUL.
+     */
+    private static void checkFileNamePart(String what, String value) {
+        if (value.indexOf('/') >= 0 || value.indexOf('\\') >= 0 || value.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException(String.format("%s cannot contain a path separator or NUL: %s", what, value));
+        }
     }
 
     FileSagaLogId(Path _path) {

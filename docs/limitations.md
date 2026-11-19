@@ -50,7 +50,9 @@ none. See [sagalog-postgres](modules/sagalog-postgres.md#timeouts-and-tls).
 
 ## Saga-log providers
 
-- **File log**: one process per log file (it is locked), and logs written before 2.1.0 cannot be read. See [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
+- **File log**: one process per log file (it is locked), and logs written before 2.1.0 cannot be read. The file
+  shrinks only when it becomes empty, and every read and recovery reads the whole file. See
+  [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
 - **PostgreSQL log**: each open log holds a connection, so the connection pool must be larger than the number of logs
   open at once. See [sagalog-postgres](modules/sagalog-postgres.md#connections).
 - **Ownership in the pool**: the deprecated `releaseOwnership(logId)` and `release(logId)` take no owner, so any caller
