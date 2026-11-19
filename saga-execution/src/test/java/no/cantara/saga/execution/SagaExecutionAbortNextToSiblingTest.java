@@ -29,7 +29,7 @@ import static org.testng.Assert.expectThrows;
 /**
  * An action that throws AbortSagaException in a node that has a sibling, in the shape
  * S -> txlog -> [persistence, search] -> E: which entries the log holds when the completion future fails, and which
- * compensating actions run. The sibling either has finished before the abort or is still running during it.
+ * compensating actions run (each preceded by CompStart). The sibling either has finished before the abort or is still running during it.
  */
 public class SagaExecutionAbortNextToSiblingTest {
 
@@ -111,8 +111,8 @@ public class SagaExecutionAbortNextToSiblingTest {
         // order between the parallel branches varies; compare as sets, then check the order that matters
         assertEquals(sorted(entries), sorted(
                 "Start:S Start:txlog End:txlog Start:persistence Start:search End:search Abort:persistence"
-                        + " Comp:search Comp:txlog End:E"));
-        assertTrue(entries.endsWith("Comp:txlog End:E"), entries);
+                        + " CompStart:search Comp:search CompStart:txlog Comp:txlog End:E"));
+        assertTrue(entries.endsWith("CompStart:txlog Comp:txlog End:E"), entries);
         assertEquals(compensated, List.of("search:search-out", "txlog:txlog-out"));
     }
 
@@ -121,9 +121,9 @@ public class SagaExecutionAbortNextToSiblingTest {
         String entries = run(0, 300);
         assertEquals(sorted(entries), sorted(
                 "Start:S Start:txlog End:txlog Start:persistence Start:search Abort:persistence End:search"
-                        + " Comp:search Comp:txlog End:E"));
+                        + " CompStart:search Comp:search CompStart:txlog Comp:txlog End:E"));
         assertTrue(entries.indexOf("End:search") < entries.indexOf("Comp:search"), entries);
-        assertTrue(entries.endsWith("Comp:txlog End:E"), entries);
+        assertTrue(entries.endsWith("CompStart:txlog Comp:txlog End:E"), entries);
         assertEquals(compensated, List.of("search:search-out", "txlog:txlog-out"));
     }
 }

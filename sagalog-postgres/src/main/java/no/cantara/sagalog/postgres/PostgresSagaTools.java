@@ -16,6 +16,8 @@ public class PostgresSagaTools {
                 return SagaLogEntryType.Comp;
             case 5:
                 return SagaLogEntryType.Ignore;
+            case 6:
+                return SagaLogEntryType.CompStart;
             default:
                 throw new IllegalArgumentException("Illegal SagaLogEntryType short-value: " + value);
         }
@@ -33,6 +35,8 @@ public class PostgresSagaTools {
                 return 4;
             case Ignore:
                 return 5;
+            case CompStart:
+                return 6;
             default:
                 throw new IllegalStateException("Unsupported enum value: " + type);
         }

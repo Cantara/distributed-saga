@@ -118,4 +118,15 @@ public class PostgresSagaLogConnectionTest {
         again.write(again.builder().startSaga("exec-2", "saga", "{}")).join(); // threw "already closed" before
         assertEquals(again.readIncompleteSagas().count(), 2L);
     }
+
+    @Test
+    public void thatEveryEntryTypeIsReadBack() {
+        SagaLogId id = pool.idFor("02", "entry-types");
+        SagaLog log = pool.connect(id);
+        for (no.cantara.sagalog.SagaLogEntryType type : no.cantara.sagalog.SagaLogEntryType.values()) {
+            log.write(new no.cantara.sagalog.SagaLogEntryBuilder().executionId("e1").entryType(type).nodeId("n")).join();
+        }
+        assertEquals(log.readIncompleteSagas().map(no.cantara.sagalog.SagaLogEntry::getEntryType).collect(Collectors.toList()),
+                java.util.List.of(no.cantara.sagalog.SagaLogEntryType.values()));
+    }
 }

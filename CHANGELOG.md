@@ -2,6 +2,29 @@
 
 ## 2.0.1 (unreleased)
 
+### Breaking changes and how to migrate
+
+- **Compensation is run and logged only for steps that have a compensating action, and the last log entry of a step
+  decides its state.** Before, a rollback wrote `Comp` for every ended step, also when its compensating action did
+  nothing, and recovery and rollback judged a step by whether *any* `End` or `Abort` entry existed (taking the first
+  `End`'s output). After a crash during a rollback, forward recovery then skipped the compensated steps and reported
+  success while their effects stayed undone (finding M1 of the fault-injection matrix).
+  - `SagaAdapter` has a new method, `boolean hasCompensatingAction()`, with no default. **Migration:** implementations
+    of `SagaAdapter` must implement it. `Adapter` implements it: true when a compensating action is given to the
+    constructor or a subclass overrides `executeCompensatingAction`; the constructors without one (or with `null`)
+    mean none.
+  - New entry type `SagaLogEntryType.CompStart`, written before each compensating action runs (`Comp` after it). The
+    PostgreSQL log stores it as `6`. **Migration:** a custom saga-log provider must store and return it.
+  - Rollback runs the compensating action of a step whose last entry is `Start`, `End` or `CompStart`, if the adapter
+    has one. A step that started but did not end is compensated with a `null` output, and its action is **not** run
+    again first (before, it was run, to be undone). **Migration:** compensating actions must handle a `null` output
+    and an action that may never have run.
+  - Forward recovery skips only a step whose last entry is `End`, and passes on the output of its last `End`. A step
+    whose last entry is `CompStart` or `Comp` (its effect may be undone), `Abort` or `Start` runs again, after a new
+    `Start` unless the last entry already is one.
+  - **Migration:** saga logs written by 2.0.0 hold `Comp` entries for steps whose compensating action did nothing;
+    forward recovery would run those steps again. Let such executions finish, or truncate the logs, before upgrading.
+
 ### Fixed
 
 - **A failed saga no longer leaves a pool thread blocked for ever.** When an action threw something other than

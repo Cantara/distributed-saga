@@ -12,7 +12,7 @@ saga-log provider implements these interfaces; `saga-execution` uses only them.
 | `SagaLog` | One append-only log: write, read, truncate, and id conversions. |
 | `SagaLogEntry` | One entry (immutable). |
 | `SagaLogEntryBuilder` | Builds entries; has a method for each kind of entry. |
-| `SagaLogEntryType` | `Start`, `End`, `Abort`, `Comp`, `Ignore`. |
+| `SagaLogEntryType` | `Start`, `End`, `Abort`, `CompStart`, `Comp`, `Ignore`. A provider must store and return every type. |
 | `SagaLogEntryId` | A provider's entry id (opaque). |
 | `SagaLogId` | Identifies a log: `getClusterInstanceId()`, `getLogName()`. |
 | `SagaLogPool` | Opens logs, hands them out, and tracks ownership. |
@@ -55,6 +55,7 @@ sagaLog.builder().startSaga(executionId, sagaName, inputText);   // Start on S
 sagaLog.builder().startAction(executionId, nodeId);              // Start on a node
 sagaLog.builder().endAction(executionId, nodeId, outputText);    // End on a node
 sagaLog.builder().abort(executionId, nodeId);                    // Abort on a node
+sagaLog.builder().compStart(executionId, nodeId);                // CompStart on a node
 sagaLog.builder().compDone(executionId, nodeId);                 // Comp on a node
 sagaLog.builder().endSaga(executionId);                          // End on E
 ```

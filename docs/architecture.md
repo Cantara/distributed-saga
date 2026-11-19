@@ -117,8 +117,8 @@ caller                     SagaExecution / pool threads                      Sag
   │◄─ completion future completes─│                                               │
 ```
 
-On `AbortSagaException`, the walk writes `Abort` on its node and the backward walk writes `Comp` for each compensated
-node and `End` on `E`, before `onComplete` and the completion future (see [Concepts](concepts.md#rollback)).
+On `AbortSagaException`, the walk writes `Abort` on its node and the backward walk writes `CompStart` and `Comp` for
+each compensated node and `End` on `E`, before `onComplete` and the completion future (see [Concepts](concepts.md#rollback)).
 
 ## Where the state lives
 

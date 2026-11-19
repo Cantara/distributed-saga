@@ -36,6 +36,10 @@ public class SagaLogEntryBuilder {
         return executionId(executionId).entryType(SagaLogEntryType.Abort).nodeId(nodeId);
     }
 
+    public SagaLogEntryBuilder compStart(String executionId, String nodeId) {
+        return executionId(executionId).entryType(SagaLogEntryType.CompStart).nodeId(nodeId);
+    }
+
     public SagaLogEntryBuilder compDone(String executionId, String nodeId) {
         return executionId(executionId).entryType(SagaLogEntryType.Comp).nodeId(nodeId);
     }

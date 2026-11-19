@@ -74,4 +74,15 @@ public class FileSagaLogLockAndIdTest {
         pool.delete(logId);
         assertTrue(!Files.exists(lock) && !Files.exists(logId.getPath()));
     }
+
+    @Test
+    public void thatEveryEntryTypeIsReadBack() throws Exception {
+        FileSagaLog log = new FileSagaLog(logId);
+        for (no.cantara.sagalog.SagaLogEntryType type : no.cantara.sagalog.SagaLogEntryType.values()) {
+            log.write(new SagaLogEntryBuilder().executionId("e1").entryType(type).nodeId("n")).join();
+        }
+        List<no.cantara.sagalog.SagaLogEntryType> read = log.readIncompleteSagas().map(SagaLogEntry::getEntryType).collect(Collectors.toList());
+        assertEquals(read, List.of(no.cantara.sagalog.SagaLogEntryType.values()));
+        log.close();
+    }
 }

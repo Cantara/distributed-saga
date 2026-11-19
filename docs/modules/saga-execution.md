@@ -24,7 +24,7 @@ Package `no.cantara.saga.execution.adapter`:
 
 | Type | Purpose |
 |---|---|
-| `SagaAdapter<OUTPUT>` | The adapter interface: `name()`, `executeAction`, `executeCompensatingAction`, `serializer()`. |
+| `SagaAdapter<OUTPUT>` | The adapter interface: `name()`, `executeAction`, `executeCompensatingAction`, `hasCompensatingAction()`, `serializer()`. |
 | `Adapter<O>` | A ready adapter built from lambdas; serializes with `toString()` and a `String` constructor. |
 | `ActionOutputSerializer<V>` | Turns an output into text and back: `serializationClazz()`, `serialize`, `deserialize`. |
 | `ActionOutputSerializerToStringAndStringConstructor<V>` | The serializer `Adapter` uses. For `String` it returns the text as is. |
@@ -73,12 +73,14 @@ the pool's rejection policy runs tasks on the caller).
 With `recovery = true`, the execution reads the log's entries for `executionId` first:
 
 - `S`: nothing is written; the handoff future completes at once.
-- A node with an `End` entry: the action is not run; the logged output is deserialized and passed on.
-- A node with only a `Start` entry: the action runs again (no second `Start` is written).
-- A node without entries: runs as normal.
-- `Abort`, `Comp` and an `End` on `E` are not looked at. A node with `Start` and `Abort` but no `End` runs again, and an
-  execution that was rolled back (or finished) is run forward again when asked; its new entries are added after the
-  old ones. Applications use this to retry an aborted saga; whether to recover an execution is the caller's choice.
+- The **last** entry of each node decides; an execution can hold several rounds of a node.
+- Last entry `End`: the action is not run; the output of that `End` is deserialized and passed on.
+- Last entry `Start`: the action runs again (no second `Start` is written).
+- Last entry `Abort`, `CompStart` or `Comp`, or no entries: a `Start` is written and the action runs. A step that was
+  (being) compensated runs again, because its effect may be undone.
+- An `End` on `E` is not looked at: an execution that was rolled back (or finished) is run forward again when asked,
+  and its new entries are added after the old ones. Applications use this to retry an aborted saga; whether to
+  recover an execution is the caller's choice.
 
 See [Using the library](../using.md#7-recover-unfinished-sagas) for how to find what to recover.
 
@@ -92,8 +94,9 @@ new Adapter<>(JsonNode.class, "WriteToDb",
         (sagaInput, output) -> db.delete(output));                    // the compensating action
 ```
 
-Its constructors: name only (action returns null, no compensation), with an action, and with an action and a
-compensating action. The output type needs a public `String` constructor for `deserialize`, unless it is `String`.
+Its constructors: name only (action returns null, no compensation), with an action (no compensation), and with an
+action and a compensating action (`null` means none). `hasCompensatingAction()` is true when a compensating action
+was given, or when a subclass overrides `executeCompensatingAction`, so an override is never skipped. The output type needs a public `String` constructor for `deserialize`, unless it is `String`.
 
 Implement `SagaAdapter<O>` directly for another serialization:
 
@@ -102,6 +105,7 @@ class WriteToDb implements SagaAdapter<JsonNode> {
     public String name() { return "WriteToDb"; }
     public JsonNode executeAction(SagaNode node, Object input, Map<SagaNode, Object> dependeesOutput) { ... }
     public void executeCompensatingAction(SagaNode node, Object input, JsonNode output) { ... }
+    public boolean hasCompensatingAction() { return true; }
     public ActionOutputSerializer<JsonNode> serializer() { return JSON_SERIALIZER; }
 }
 ```
@@ -112,7 +116,10 @@ Rules for adapters:
 - The adapter name is stored in serialized sagas; renaming breaks them.
 - Actions and compensating actions can run more than once; make them idempotent.
 - A `null` output is written as no data, and read back as `null`.
-- Throw `AbortSagaException` from an action to roll back. The aborting node is not compensated.
+- Throw `AbortSagaException` from an action to roll back. The aborting node is not compensated: undo its own partial
+  effect before you throw.
+- A compensating action can be called with a `null` output, for a node that started but did not end: it must handle
+  an action that may never have run.
 - `AdapterLoader.load` fails for an unknown adapter name only when the node is reached. Register every adapter
   before you start sagas.
 
