@@ -9,7 +9,7 @@ class MemorySagaLogId implements SagaLogId {
     private final String logName;
 
     MemorySagaLogId(String clusterInstanceId, String logName) {
-        this.clusterInstanceId = clusterInstanceId;
+        this.clusterInstanceId = Objects.requireNonNull(clusterInstanceId, "clusterInstanceId");
         if (logName == null) {
             throw new IllegalArgumentException("logName cannot be null");
         }

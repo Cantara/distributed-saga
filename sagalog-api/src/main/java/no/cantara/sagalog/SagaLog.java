@@ -8,14 +8,40 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * One append-only saga log. A log is used by one owner at a time (see {@link SagaLogPool}), but the steps of one saga
+ * execution run in parallel, so a provider must accept {@link #write} calls from several threads at once. Logs are
+ * opened and closed by their pool.
+ */
 public interface SagaLog extends AutoCloseable {
 
+    /**
+     * @return this log's id
+     */
     SagaLogId id();
 
+    /**
+     * Appends an entry. The log assigns the entry's id when the builder has none.
+     *
+     * @param builder the entry to write; not null
+     * @return a future of the written entry, with its id, completed when the entry is stored, or failed if it could
+     * not be stored
+     */
     CompletableFuture<SagaLogEntry> write(SagaLogEntryBuilder builder);
 
+    /**
+     * Removes the entries up to and including the entry with the given id, in write order.
+     *
+     * @param id the id of the last entry to remove; not null
+     * @return a future completed when the entries are removed
+     */
     CompletableFuture<Void> truncate(SagaLogEntryId id);
 
+    /**
+     * Removes every entry in this log.
+     *
+     * @return a future completed when the entries are removed
+     */
     CompletableFuture<Void> truncate();
 
     /**
@@ -35,18 +61,53 @@ public interface SagaLog extends AutoCloseable {
      */
     Stream<SagaLogEntry> readEntries(String executionId);
 
+    /**
+     * Writes an entry id of this log as text; {@link #fromString(String)} reads it back. Nothing in this library uses
+     * the four id conversions; they are kept for applications that store entry ids.
+     *
+     * @param id an entry id of this log
+     * @return the id as text
+     */
     String toString(SagaLogEntryId id);
 
+    /**
+     * Reads an entry id written by {@link #toString(SagaLogEntryId)}.
+     *
+     * @param id the id as text
+     * @return the entry id
+     */
     SagaLogEntryId fromString(String id);
 
+    /**
+     * Writes an entry id of this log as bytes; {@link #fromBytes(byte[])} reads it back.
+     *
+     * @param id an entry id of this log
+     * @return the id as bytes
+     */
     byte[] toBytes(SagaLogEntryId id);
 
+    /**
+     * Reads an entry id written by {@link #toBytes(SagaLogEntryId)}.
+     *
+     * @param idBytes the id as bytes
+     * @return the entry id
+     */
     SagaLogEntryId fromBytes(byte[] idBytes);
 
+    /**
+     * @return a new entry builder
+     */
     default SagaLogEntryBuilder builder() {
         return new SagaLogEntryBuilder();
     }
 
+    /**
+     * {@link #readEntries(String)} grouped by node id: each node's entries in write order, the nodes in the order of
+     * their first entry. Only saga execution uses it; it is kept here for compatibility.
+     *
+     * @param executionId the saga execution id
+     * @return the entries by node id
+     */
     default Map<String, List<SagaLogEntry>> getSnapshotOfSagaLogEntriesByNodeId(String executionId) {
         Map<String, List<SagaLogEntry>> recoverySagaLogEntriesBySagaNodeId = new LinkedHashMap<>();
         List<SagaLogEntry> entries = readEntries(executionId).collect(Collectors.toList());

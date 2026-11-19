@@ -6,9 +6,44 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
 
 ### Breaking changes and how to migrate
 
+- **sl-6: a shut-down saga-log pool refuses new work.** After `SagaLogPool.shutdown()`, `connect`, `tryAcquire` and
+  `tryTakeOwnership` throw `SagaPoolShutdownException`, and a connect in progress during shutdown closes its log and
+  throws it too. Before, the pool opened logs (connections, locks) again after shutdown. **Migration:** shut the pool
+  down after the sagas and the recovery that use it have stopped. A provider that extends `AbstractSagaLogPool` and
+  overrides `shutdown()` must call `super.shutdown()`.
+- **sl-5: `SagaLogPool.delete` of a log still in the pool throws `IllegalStateException`** (a `RuntimeException`
+  before), and the message names the log id (it showed `%s` before). **Migration:** code that caught
+  `RuntimeException` still catches it; code that compared the exact class must expect `IllegalStateException`.
+- **sl-10: the memory saga log refuses a `null` cluster instance id** with `NullPointerException` when the id is made
+  (`idFor(null, name)`). Before, the id was made, and comparing it threw `NullPointerException` later. **Migration:**
+  pass a cluster instance id.
+
 ### Fixed
 
+- **sl-1: `SagaLogPool.shutdown()` closes every log.** Before, it stopped at the first log that failed to close, left the
+  others open (connections, file and advisory locks) and the pool not cleared. Now every log is closed, the pool is
+  cleared either way, and the first failure is thrown with later ones added as suppressed.
+- **sl-3: releasing a log that was never taken throws `IllegalStateException`** (`releaseOwnership(logId)`,
+  `release(logId)`), as documented, instead of `NullPointerException`.
+- **sl-4: the `SagaLogEntry.getJsonData()` Javadoc** said the file log drops data that is not a JSON object. Every saga
+  log stores the data unchanged, the file log too since 2.1.0.
+
 ### Changed
+
+- **sl-2: `connect` no longer runs the provider's connect inside a `ConcurrentHashMap` lock.** One connect runs per log
+  id; callers for the same id wait for it and get the same log, and callers for other ids no longer wait behind it.
+  A failed connect leaves nothing in the pool, as before.
+- **sl-3: new `SagaLogPool.releaseOwnership(SagaLogOwner owner, SagaLogId logId)`**, which releases the log only for
+  the owner that holds it: `SagaLogAlreadyAquiredByOtherOwnerException` if another owner holds it (nothing is
+  released), `IllegalStateException` if nobody does. `releaseOwnership(SagaLogId)` and `release(SagaLogId)` are
+  deprecated and work as before. The interface method is a default method that throws
+  `UnsupportedOperationException`; `AbstractSagaLogPool` implements it, so every provider in this repository has it.
+- **sl-7: new `SagaLogPool.tryAcquire(SagaLogOwner, long, TimeUnit)`**, so the timeout types of `tryAcquire` and
+  `tryTakeOwnership` agree. The `int` overload stays. A negative timeout does not wait.
+- **sl-8, sl-9: Javadoc** of `SagaLogPool` and `SagaLog` completed, including the threading, ownership and shutdown
+  contracts, and that nothing in the library uses the entry-id conversions.
+- **sl-10:** the `sagalog-api` module no longer `opens` `no.cantara.sagalog.memory` (nothing reflects on it); raw types
+  removed; `serialVersionUID` on the three exception classes.
 
 ## 2.1.0 (2026-11-19)
 

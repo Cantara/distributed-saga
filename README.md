@@ -81,14 +81,15 @@ SagaLogPool logPool = ServiceLoader.load(SagaLogInitializer.class).stream()
         .findFirst().orElseThrow().get()
         .initialize(Map.of("cluster.instance-id", "01"));
 SagaLogId logId = logPool.registerInstanceLocalIdFor("log-1");
-SagaLog sagaLog = logPool.tryTakeOwnership(new SagaLogOwner("main"), logId);
+SagaLogOwner owner = new SagaLogOwner("main");
+SagaLog sagaLog = logPool.tryTakeOwnership(owner, logId);
 
 // 4. Run it, clean the log when it is done, and wait.
 SagaHandoffControl control = new SagaExecution(sagaLog, pool, saga, adapters)
         .executeSaga(UUID.randomUUID().toString(), "{\"order\":1}", false, result -> sagaLog.truncate().join());
 SagaHandoffResult result = control.getCompletionFuture().join();
 System.out.println("success: " + result.isSuccess());   // success: true
-logPool.releaseOwnership(logId);
+logPool.releaseOwnership(owner, logId);
 ```
 
 An action that throws `AbortSagaException` rolls the saga back: the compensating actions of the steps that completed
