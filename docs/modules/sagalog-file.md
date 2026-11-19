@@ -22,18 +22,47 @@ SagaLogPool pool = initializer.initialize(Map.of(
 
 ## Storage
 
-- One file per log: `<cluster-instance-id>.--.<log-name>.sagalog` in the folder. `clusterWideLogIds()` lists every
-  `*.sagalog` file in the folder.
+- One file per log: `<cluster-instance-id>.--.<log-name>.sagalog` in the folder, next to its lock file
+  `<log file>.lock`. `clusterWideLogIds()` lists every `*.sagalog` file in the folder; a file with that suffix whose
+  name is not a saga-log id (no `.--.`, for example an operator's `backup.sagalog`) is skipped with a warning (logged
+  through `System.Logger`). A log name or instance id with a path separator (`/`, `\`) or NUL is refused with
+  `IllegalArgumentException`, and so is an instance id that contains `.--.` or ends in a part of it.
 - Each file is a queue file: a ring buffer with a small header, where a change takes effect only when the header is
-  rewritten. Every write is synchronous; data is on disk when `write` returns. The implementation is a copy of Square's
-  Tape `QueueFile` (2.0.0-beta1), in the package `no.cantara.sagalog.file.queue`; see [NOTICE](../../NOTICE). The queue
-  file format is Tape's, unchanged; the entry records inside it changed in 2.1.0 (below).
+  rewritten. Every write is synchronous; data is on disk when `write` returns. When a log file is created or deleted,
+  and when the folder is created, the folder is synced too, so the file's name is durable as well (on Windows, where a
+  folder cannot be synced this way, this step is skipped). The implementation is a copy of Square's Tape `QueueFile`
+  (2.0.0-beta1), in the package `no.cantara.sagalog.file.queue`; see [NOTICE](../../NOTICE). The queue file format is
+  Tape's, unchanged; the entry records inside it changed in 2.1.0 (below).
 - Each entry is one queue element in a binary record: a format-version byte (`2`), the id as a long, then execution
   id, entry type, node id, saga name and data, each as a length-prefixed UTF-8 string (length `-1` for null). Any
-  text is stored as it is.
+  text is stored as it is. A record with a length that does not fit it, or an unknown entry type, is reported as a
+  corrupt entry (`UncheckedIOException`, "Corrupt saga-log entry in ...").
 - `truncate(id)` removes the first elements up to and including that id; `truncate()` clears the file. `delete`
-  deletes the file.
-- Writes, truncates and reads of one log are synchronized within the process.
+  deletes the file and its lock file.
+- Writes, truncates, reads and `close()` of one log are serialised within the process.
+- **The file shrinks only when it becomes empty.** It doubles when full, and goes back to 4 KiB only when the last
+  entry is removed: by `truncate()`, or by `truncate(id)` of the last entry. A log that is never emptied (no truncation,
+  or `truncate(id)` with a saga always in flight) stays at its peak size. Truncate with `truncate()` once a saga ends,
+  as the engine's `onComplete` pattern does.
+- **Reads cost the whole file.** Opening a log, `readIncompleteSagas`, `readEntries` and `truncate(id)` each read every
+  element, holding the log's monitor while the bytes are copied (a write to the same log waits). Opening and
+  `truncate(id)` decode only the ids, and `readEntries` decodes only the entries of its execution. A recovery of one
+  log with *k* unfinished executions reads the file *k + 2* times. With the documented pattern the log stays small.
+
+## Failures
+
+- `write` and `truncate` report every failure through the returned future, as the PostgreSQL log does: the future
+  fails, and the call itself does not throw. An I/O failure is an `UncheckedIOException` that names the operation and
+  the file ("Cannot write to saga-log ...", "Cannot truncate saga-log ...").
+- The reads (`readIncompleteSagas`, `readEntries`, and so `getSnapshotOfSagaLogEntriesByNodeId`) throw an I/O failure
+  as `UncheckedIOException` ("Cannot read saga-log ..."), never as an undeclared checked `IOException`.
+- Opening a log throws `SagaLogBusyException` (see below), `UncheckedIOException` ("Cannot open saga-log ...") or
+  `IllegalStateException` (an entry in an unsupported format). A failed open releases everything it took.
+- `close()` is idempotent: a second call does nothing. It waits for a running write, truncate or read of the log. Any
+  use after close fails with `IllegalStateException` ("Saga-log is closed: ..."), through the future for `write` and
+  `truncate`.
+- A failure while cleaning up (closing the file or releasing the lock after an earlier failure) is attached to the
+  first failure with `addSuppressed`.
 
 ## Behaviour to know
 
@@ -42,8 +71,21 @@ SagaLogPool pool = initializer.initialize(Map.of(
   the old version, or delete the log file, before upgrading.
 - **One open log per file.** Opening a log takes an exclusive lock on `<log file>.lock` (an operating-system file
   lock, so it holds between processes) until `close()`. A second open, in another process or in the same one, fails
-  with `SagaLogBusyException`. `delete` removes the lock file too.
-- Entry ids continue after the highest id in the file when a log is opened again, so they stay unique across
-  restarts.
+  with `SagaLogBusyException`. Because the operating-system lock belongs to the process (closing any handle of the
+  lock file in the process releases it), the module never opens a second handle on a lock file this process holds: a
+  process-wide registry refuses the second open first. The registry lives in the module's classes, so two copies of
+  the module loaded by different class loaders in one JVM do not see each other's logs; do not open one log through
+  both.
+- **`delete` takes the lock.** `delete` takes the log's lock, deletes the log file and its lock file while holding it,
+  then releases it. It fails with `SagaLogBusyException` when another process, or an open log or another pool in this
+  process, holds the log (as the PostgreSQL log does). One race remains because the lock file is removed: a process
+  that opened the old lock file just before `delete` removed it, and locks it just after, holds a lock no one else
+  sees, while a later open creates and locks a new lock file. Do not delete a log that another process may be opening.
+- **Entry ids stay unique for the life of the log file, across restarts, also after the log was emptied.** When a log
+  is opened again, ids continue after the highest id in the file and after the next id kept in the lock file. That
+  record is written (12 bytes, synced) before a truncate empties the log; a lock file from 2.1.0 is empty and reads
+  as no record. `delete` removes it with the lock file, so a new log under the same name starts at 0 again. The log
+  assigns ids; an id already set in the builder is kept, must be greater than every id in the log, and ids assigned
+  later follow it.
 - Power loss during a write can corrupt the file on file systems that do not write a segment atomically (most of
   them); this is a property of the Tape format.

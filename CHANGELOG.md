@@ -63,6 +63,30 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
   that assigned them must keep its own values instead.
 - **`Utils`, `SagaSerializer` and `SagaDeserializer` cannot be instantiated (fs-5, ss-3):** they have private
   constructors. **Migration:** call their static methods.
+- **File saga log: `delete` fails with `SagaLogBusyException` when another holder has the log open** (sf-3). It takes
+  the log's lock, deletes the log file and its lock file while holding it, and then releases it. Before, it deleted
+  both files without trying the lock, so a process that still had the log open went on writing to a deleted file, and
+  the next open succeeded next to it. **Migration:** delete a log only once no other process or pool has it open; a
+  caller that deletes logs of other instances handles `SagaLogBusyException` (unchecked, as the PostgreSQL log's
+  `delete` already throws).
+- **File saga log: `write` and `truncate` no longer throw; every failure fails the returned future** (sf-7), as the
+  PostgreSQL log does. **Migration:** a caller that caught an exception from the call itself gets it from `join()`
+  (as `CompletionException`) or `exceptionally`/`whenComplete` instead. The engine is not affected.
+- **File saga log: exception types** (sf-4, sf-10, sf-12). An I/O failure is an `UncheckedIOException` that names the
+  operation and the file ("Cannot open saga-log ...", "Cannot write to saga-log ...", "Cannot truncate saga-log ...",
+  "Cannot read saga-log ...", "Cannot delete saga-log ...", "Cannot list the saga-log folder ...", "Cannot create the
+  saga-log folder ..."). Before, it was a `RuntimeException` with only the cause, and a read failure escaped as an
+  undeclared checked `IOException` (for example a bare `EOFException`) that `catch (RuntimeException e)` missed. A
+  record with a bad string length or an unknown entry type is now "Corrupt saga-log entry" (`UncheckedIOException`)
+  instead of `NegativeArraySizeException`, a huge allocation or `IllegalArgumentException`. Use after `close()` is
+  `IllegalStateException` ("Saga-log is closed: ..."). **Migration:** code that matches on `RuntimeException` still
+  matches; code that matched on the cause of a plain `RuntimeException` reads the cause of the `UncheckedIOException`.
+- **File saga log: log names and instance ids with a path separator (`/`, `\`) or NUL are refused**, and so are
+  instance ids that contain `.--.` or end in a part of it (sf-13), with `IllegalArgumentException` from `idFor`. Such a
+  name pointed outside the folder, failed at open, or made `clusterWideLogIds()` fail. **Migration:** use plain names.
+- **File saga log: `FileSagaLog` is package-private, and `FileSagaLogInitializer.initialize` returns `SagaLogPool`**
+  (sf-14). Nothing changes on the module path, where the package was never exported. **Migration:** on the class
+  path, open logs through the pool (`SagaLogPool.connect`), not with `new FileSagaLog(...)`.
 
 ### Fixed
 
@@ -106,6 +130,23 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
   `releaseOwnership(owner, logId)` (sl-3). It replies 409 for a rolled-back saga and
   500 for another failure, with the execution id; it builds the saga once; and its module no longer requires
   `java.net.http`.
+- **File saga log: a refused second open in the same process no longer releases the first open's lock** (sf-1). The
+  operating-system lock belongs to the process, and closing the refused open's handle on the lock file released it, so
+  another process could then open the log and write to it at the same time. The module now keeps a process-wide
+  registry of the lock files it holds and refuses a second open before it touches the file.
+- **File saga log: `clusterWideLogIds()` no longer leaks a directory handle per call** (sf-2); periodic recovery ran
+  out of file descriptors.
+- **File saga log: a log file, and the folder, are durable once created or deleted** (sf-5): the folder is synced
+  after a log file is created or deleted and after the folder is created (skipped on Windows).
+- **File saga log: `close()` is idempotent and waits for a running write, truncate or read** (sf-6). A second close
+  threw `ClosedChannelException`, so closing a pooled log and then `pool.shutdown()` failed.
+- **File saga log: a stray `*.sagalog` file without the `.--.` separator is skipped with a warning** (sf-8); it made
+  `clusterWideLogIds()` fail for every log.
+- **File saga log: entry ids stay unique across restarts, also after the log was emptied** (sf-9). Ids restarted at 0
+  when an emptied log was opened again. The next id is now kept in the log's lock file (a 12-byte record, written
+  before a truncate empties the log); the queue file format is unchanged, and a 2.1.0 lock file, which is empty, reads
+  as no record. A failed open releases the lock even on an `Error`, and a cleanup failure is attached to the first
+  failure with `addSuppressed` (sf-10).
 
 ### Changed
 
@@ -151,6 +192,13 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
 - **`SagaSerializer` throws `UncheckedIOException` when the `Writer` fails (ss-2),** with a message that names the saga
   or node. Before, it threw a bare `RuntimeException`; both are unchecked and keep the `IOException` as the cause.
 - **`FutureSelector` documents its threading contract (fs-2):** any thread may add, one thread selects.
+- **File saga log: fewer bytes decoded per read** (sf-11). Opening a log and `truncate(id)` decode only each entry's
+  id, and `readEntries` decodes only its execution's entries. The docs now say that the file shrinks only when it
+  becomes empty and that every read and recovery reads the whole file.
+- **File saga log: internal structure** (sf-15, sf-16). The entry id is a record (its `toString` is now
+  `FileSagaLogEntryId[id=...]`), the record codec is its own class, and the lock is its own class. The module no
+  longer `opens` its package. New tests: two-process tests of the lock and `delete`, failure paths, close twice,
+  descriptor leak, stray files, and concurrent writes, reads and truncates.
 
 ## 2.1.0 (2026-11-19)
 
