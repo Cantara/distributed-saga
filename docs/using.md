@@ -94,7 +94,8 @@ SagaLogInitializer initializer = ServiceLoader.load(SagaLogInitializer.class).st
 SagaLogPool logPool = initializer.initialize(Map.of("cluster.instance-id", "01"));
 
 SagaLogId logId = logPool.registerInstanceLocalIdFor("log-1");
-SagaLog sagaLog = logPool.tryTakeOwnership(new SagaLogOwner("main"), logId);
+SagaLogOwner owner = new SagaLogOwner("main");
+SagaLog sagaLog = logPool.tryTakeOwnership(owner, logId);
 ```
 
 | Provider | Use it for | Page |
@@ -104,7 +105,7 @@ SagaLog sagaLog = logPool.tryTakeOwnership(new SagaLogOwner("main"), logId);
 | `no.cantara.sagalog.postgres.PostgresSagaLogInitializer` | several instances, shared storage | [sagalog-postgres](modules/sagalog-postgres.md) |
 
 A log has one writer at a time. Concurrent sagas need one log each; a common pattern is to register several
-instance-local log ids at start-up and take one per saga with `tryAcquire(owner)`, then `release(logId)` when the
+instance-local log ids at start-up and take one per saga with `tryAcquire(owner)`, then `releaseOwnership(owner, logId)` when the
 saga is done (see [sagalog-api](modules/sagalog-api.md#pools-and-ownership)).
 
 ## 5. Run the saga and wait
@@ -116,7 +117,7 @@ SagaHandoffControl control = new SagaExecution(sagaLog, pool, saga, adapters)
 
 control.getHandoffFuture().join();                                 // the saga is in the log
 SagaHandoffResult result = control.getCompletionFuture().join();   // the saga is finished
-logPool.releaseOwnership(logId);
+logPool.releaseOwnership(owner, logId);
 ```
 
 Output:
@@ -213,4 +214,6 @@ waits for every walk of a successful saga to end, and checks that every node was
 
 ## 9. Shut down
 
-Shut down the thread pool you created, and call `SagaLogPool.shutdown()` to close the pool's logs.
+Shut down the thread pool you created, and call `SagaLogPool.shutdown()` to close the pool's logs. After that the pool
+refuses `connect`, `tryAcquire` and `tryTakeOwnership` with `SagaPoolShutdownException`, so shut it down after the
+sagas and the recovery that use it have stopped.

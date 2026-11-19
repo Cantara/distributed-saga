@@ -51,7 +51,7 @@ class MemorySagaLog implements SagaLog {
     @Override
     public CompletableFuture<Void> truncate(SagaLogEntryId entryId) {
         Set<SagaLogEntry> toBeRemoved = new LinkedHashSet<>();
-        Set toBeRemovedIds = new LinkedHashSet<>();
+        Set<SagaLogEntryId> toBeRemovedIds = new LinkedHashSet<>();
         for (SagaLogEntry sle : incompleteEntries) {
             toBeRemoved.add(sle);
             toBeRemovedIds.add(sle.getId());

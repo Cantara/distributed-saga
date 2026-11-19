@@ -49,8 +49,8 @@ thread and its saga. Put timeouts inside your actions.
 - **File log**: one process per log file (it is locked), and logs written before 2.1.0 cannot be read. See [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
 - **PostgreSQL log**: each open log holds a connection, so the connection pool must be larger than the number of logs
   open at once. See [sagalog-postgres](modules/sagalog-postgres.md#connections).
-- **Ownership in the pool**: `releaseOwnership(logId)` and `release(logId)` take no owner, so any caller can release
-  any log; release only logs you hold.
+- **Ownership in the pool**: the deprecated `releaseOwnership(logId)` and `release(logId)` take no owner, so any caller
+  can release any log. Use `releaseOwnership(owner, logId)`, which refuses to release another owner's log.
 
 ## Graphs
 

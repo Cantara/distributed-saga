@@ -29,16 +29,17 @@ saga-log provider implements these interfaces; `saga-execution` uses only them.
 | `write(builder)` | Appends an entry; the log assigns its id. Returns a future of the written entry. |
 | `readIncompleteSagas()` | Every entry in the log, in write order, finished executions included, until truncated. (The name is historical.) |
 | `readEntries(executionId)` | The entries of one execution, in write order. |
-| `getSnapshotOfSagaLogEntriesByNodeId(executionId)` | `readEntries` grouped by node id (default method). |
+| `getSnapshotOfSagaLogEntriesByNodeId(executionId)` | `readEntries` grouped by node id (default method). Only saga execution uses it. |
 | `truncate()` | Removes every entry. |
 | `truncate(id)` | Removes the entries up to and including the entry with that id. |
 | `toString(id)` / `fromString(text)` | Entry id as text and back. |
-| `toBytes(id)` / `fromBytes(bytes)` | Entry id as bytes and back. |
+| `toBytes(id)` / `fromBytes(bytes)` | Entry id as bytes and back. Nothing in this library uses the four id conversions; they are kept for applications that store entry ids. |
 | `builder()` | A new `SagaLogEntryBuilder`. |
 | `id()` | This log's `SagaLogId`. |
 | `close()` | Closes the log. |
 
-Entry data (`getJsonData()`) is any text, written by an adapter's serializer; see each provider for what it stores.
+Entry data (`getJsonData()`) is any text, written by an adapter's serializer; every provider stores and returns it
+unchanged.
 
 Each provider has its own entry ids:
 
@@ -79,15 +80,28 @@ Getting a log:
 
 | Method | What it does |
 |---|---|
-| `tryAcquire(owner)` / `tryAcquire(owner, timeout, unit)` | Takes the next available registered instance-local log, with ownership. Returns null if none (or on timeout). |
-| `release(logId)` | Same as `releaseOwnership(logId)`. |
+| `tryAcquire(owner)` / `tryAcquire(owner, timeout, unit)` | Takes the next available registered instance-local log, with ownership. Returns null if none (or on timeout). The timeout is an `int` or a `long`. |
 | `tryTakeOwnership(owner, logId)` / with timeout | Takes ownership of a specific log, connecting it if needed. Returns null if another caller holds it. |
-| `releaseOwnership(logId)` | Releases ownership. A registered instance-local log becomes available to `tryAcquire` again, however it was taken. |
+| `releaseOwnership(owner, logId)` | Releases the owner's ownership. A registered instance-local log becomes available to `tryAcquire` again, however it was taken. Throws `SagaLogAlreadyAquiredByOtherOwnerException` if another owner holds the log (nothing is released), and `IllegalStateException` if nobody does. |
+| `releaseOwnership(logId)`, `release(logId)` | Deprecated: the same without the owner check, so any caller can release any log. `IllegalStateException` if the log is not owned (never taken, or released twice). |
 | `connect(logId)` | Opens the log without taking ownership in the pool; throws `SagaLogBusyException` if another process holds it. |
 | `remove(logId)` | Closes the log and removes it from the pool; ownership is unchanged. Call it while you own the log: own, remove, release. |
-| `delete(logId)` | Deletes the log's storage (the file, or the table and its lock row); the log must be removed first. |
-| `shutdown()` | Closes and removes every log. |
+| `delete(logId)` | Deletes the log's storage (the file, or the table and its lock row); `IllegalStateException` if the log is still in the pool: remove it first. |
+| `shutdown()` | Closes and removes every log and clears the ownerships, then refuses new work (below). |
 | `instanceLocalSagaLogOwnerships()` | A snapshot of current ownerships, for monitoring. |
+
+All methods are safe to call from several threads. `connect` runs the provider's connect outside any lock on the
+pool's maps: callers for the same log wait for one connect and get the same log, and callers for other logs do not
+wait. If that connect fails, nothing is left in the pool, and each caller that waited tries again itself.
+
+### Shutdown
+
+`shutdown()` marks the pool as shut down, then closes every log, also when closing one fails: the first failure is
+thrown, with later ones added as suppressed, and the pool is cleared either way. After that, `connect`, `tryAcquire` and
+`tryTakeOwnership` throw `SagaPoolShutdownException`; a connect still in progress closes its log and throws it too.
+`remove`, `delete` and the deprecated releases still work. `releaseOwnership(owner, logId)` throws
+`IllegalStateException`, because the pool holds no ownerships after shutdown. Shut the pool down after the sagas and the
+recovery that use it have stopped.
 
 Ownership inside a pool is a lock per log: one owner at a time. A registered instance-local log is available to
 `tryAcquire` exactly when nobody owns it, and at most once; taking it with `tryTakeOwnership` makes it unavailable
@@ -108,7 +122,7 @@ SagaLog log = pool.tryAcquire(owner, 10, TimeUnit.SECONDS);   // per saga
 try {
     // execute the saga; truncate the log in onComplete
 } finally {
-    pool.release(log.id());                                   // after the saga is complete and the log is clean
+    pool.releaseOwnership(owner, log.id());                   // after the saga is complete and the log is clean
 }
 ```
 
@@ -126,7 +140,9 @@ Provider `no.cantara.sagalog.memory.MemorySagaLogInitializer`. Configuration: `c
 
 1. Implement `SagaLog` and `SagaLogId`.
 2. Extend `AbstractSagaLogPool`: implement `idFor`, `clusterWideLogIds`, `connectExternal` (open the storage, and
-   lock it against other processes if it can be shared) and `deleteExternal`.
+   lock it against other processes if it can be shared) and `deleteExternal`. The pool calls `connectExternal` for one
+   id at most once at a time. If you override `shutdown()` (to close a connection pool, for example), call
+   `super.shutdown()`: it marks the pool as shut down and closes the logs the pool holds.
 3. Implement `SagaLogInitializer` and register it as a service in `module-info.java`
    (`provides no.cantara.sagalog.SagaLogInitializer with ...`) and in
    `META-INF/services/no.cantara.sagalog.SagaLogInitializer`.

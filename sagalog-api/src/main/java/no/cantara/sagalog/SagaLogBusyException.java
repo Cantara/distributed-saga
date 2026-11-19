@@ -1,6 +1,8 @@
 package no.cantara.sagalog;
 
 public class SagaLogBusyException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public SagaLogBusyException() {
     }
 

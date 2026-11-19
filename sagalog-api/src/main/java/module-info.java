@@ -6,7 +6,5 @@ module no.cantara.sagalog {
 
     exports no.cantara.sagalog;
 
-    opens no.cantara.sagalog.memory;
-
     provides SagaLogInitializer with MemorySagaLogInitializer;
 }
