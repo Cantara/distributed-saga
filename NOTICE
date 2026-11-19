@@ -1,0 +1,11 @@
+Distributed Saga (https://github.com/Cantara/distributed-saga)
+
+This product includes software developed at Square, Inc. (https://squareup.com/):
+Tape 2.0.0-beta1 (https://github.com/square/tape), Copyright (C) 2010 Square, Inc.,
+licensed under the Apache License, Version 2.0.
+The file sagalog-file/src/main/java/no/cantara/sagalog/file/queue/QueueFile.java is a modified copy of
+tape/src/main/java/com/squareup/tape2/QueueFile.java. The tests QueueFileTest and QueueFileLoadingTest in
+sagalog-file/src/test/java/no/cantara/sagalog/file/queue/ are ported from Tape's tests of the same names, and the
+fixtures empty-serialized-queue, one-entry-serialized-queue, truncated-empty-serialized-queue and
+truncated-one-entry-serialized-queue in sagalog-file/src/test/resources/queue/ are copied from Tape. The changes are
+listed at the top of each file.

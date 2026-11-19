@@ -1,14 +1,14 @@
 package no.cantara.sagalog.postgres;
 
-import de.huxhorn.sulky.ulid.ULID;
 import no.cantara.sagalog.SagaLogEntryId;
 
 import java.util.Objects;
+import java.util.UUID;
 
 class PostgresSagaLogEntryId implements SagaLogEntryId {
-    final ULID.Value id;
+    final UUID id;
 
-    PostgresSagaLogEntryId(ULID.Value id) {
+    PostgresSagaLogEntryId(UUID id) {
         if (id == null) {
             throw new IllegalArgumentException("id cannot be null");
         }

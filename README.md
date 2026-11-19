@@ -135,3 +135,10 @@ https://blog.bernd-ruecker.com/saga-how-to-implement-complex-business-transactio
 
 Pat Helland (Amazon) has written the "Life beyond Distributed Transactions" paper
 http://adrianmarriott.net/logosroot/papers/LifeBeyondTxns.pdf
+
+
+# Acknowledgements
+
+The file saga log (`sagalog-file`) stores its entries with `QueueFile`, a modified copy of the class of the same
+name from [Tape](https://github.com/square/tape) 2.0.0-beta1 by Square, Inc., licensed under the Apache License,
+Version 2.0. See [NOTICE](NOTICE).

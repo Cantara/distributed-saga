@@ -14,6 +14,6 @@ CREATE TABLE IF NOT EXISTS sagalog.Sagalog (
     entry_type      smallint  NOT NULL,
     node_id         varchar   NOT NULL,
     saga_name       varchar   NULL,
-    data            json      NULL,
+    data            text      NULL,
     PRIMARY KEY (entry_id, txid)
 );

@@ -18,8 +18,21 @@ public interface SagaLog extends AutoCloseable {
 
     CompletableFuture<Void> truncate();
 
+    /**
+     * Reads every entry in this log, in the order the entries were written. The log holds the entries of every saga
+     * written since it was last truncated: unfinished sagas, and also finished ones (with an End entry on node
+     * {@code "E"}, written after success and after rollback) whose entries have not been truncated yet. Callers that need only unfinished sagas filter on that.
+     *
+     * @return the entries, in write order
+     */
     Stream<SagaLogEntry> readIncompleteSagas();
 
+    /**
+     * Reads the entries of one saga execution, in the order they were written.
+     *
+     * @param executionId the saga execution id
+     * @return the entries, in write order
+     */
     Stream<SagaLogEntry> readEntries(String executionId);
 
     String toString(SagaLogEntryId id);

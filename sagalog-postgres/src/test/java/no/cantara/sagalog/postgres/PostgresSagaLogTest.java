@@ -121,6 +121,81 @@ public class PostgresSagaLogTest {
         assertEquals(secondFlattenedSnapshot, Set.copyOf(secondEntries));
     }
 
+    @Test
+    public void thatEntriesAreReadInIdOrderNotInPhysicalOrder() throws SQLException {
+        Deque<SagaLogEntry> written = writeSuccessfulVanillaSagaExecutionEntries(sagaLog, UUID.randomUUID().toString());
+        String executionId = written.getFirst().getExecutionId();
+        // a row stored after the others, with an id that sorts before them: an id from 2020
+        UUID earlier = new UUID((1577836800000L << 16) | 0x7000L, 0x8000_0000_0000_0001L);
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(true);
+            try (java.sql.PreparedStatement ps = connection.prepareStatement(String.format(
+                    "INSERT INTO \"%s\".\"%s\" (txid, entry_id, entry_type, node_id, saga_name, data) VALUES(?, ?, ?, ?, NULL, NULL)",
+                    SAGA_LOG_ID.getSchema(), SAGA_LOG_ID.getTableName()))) {
+                ps.setString(1, executionId);
+                ps.setObject(2, earlier);
+                ps.setShort(3, PostgresSagaTools.toShort(no.cantara.sagalog.SagaLogEntryType.Start));
+                ps.setString(4, "action0");
+                ps.executeUpdate();
+            }
+        }
+        List<SagaLogEntry> all = sagaLog.readIncompleteSagas().collect(Collectors.toList());
+        assertEquals(all.size(), written.size() + 1);
+        assertEquals(all.get(0).getNodeId(), "action0");
+        assertEquals(all.subList(1, all.size()), List.copyOf(written));
+
+        List<SagaLogEntry> ofExecution = sagaLog.readEntries(executionId).collect(Collectors.toList());
+        assertEquals(ofExecution.get(0).getNodeId(), "action0");
+        assertEquals(ofExecution.subList(1, ofExecution.size()), List.copyOf(written));
+    }
+
+    @Test
+    public void thatEntryIdsAreUuidV7AndRoundTrip() {
+        for (SagaLogEntry entry : writeSuccessfulVanillaSagaExecutionEntries(sagaLog, UUID.randomUUID().toString())) {
+            UUID id = ((PostgresSagaLogEntryId) entry.getId()).id;
+            assertEquals(id.version(), 7);
+            assertEquals(id.variant(), 2);
+            assertEquals(sagaLog.fromString(sagaLog.toString(entry.getId())), entry.getId());
+            assertEquals(sagaLog.fromBytes(sagaLog.toBytes(entry.getId())), entry.getId());
+            assertEquals(sagaLog.toString(entry.getId()), id.toString());
+        }
+    }
+
+    @Test
+    public void thatDataNeedNotBeJson() {
+        String executionId = UUID.randomUUID().toString();
+        SagaLogEntry written = sagaLog.write(sagaLog.builder().endAction(executionId, "action1", "OK")).join();
+        SagaLogEntry read = sagaLog.readEntries(executionId).findFirst().orElseThrow();
+        assertEquals(read, written);
+        assertEquals(read.getJsonData(), "OK");
+    }
+
+    @Test
+    public void thatATableWithAJsonDataColumnFromBefore200StillWorks() throws SQLException {
+        PostgresSagaLogId oldLogId = new PostgresSagaLogId("sagalog", "internal-sagalog-integration-testing", "01", "the-old-saga-log");
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(true);
+            connection.createStatement().executeUpdate(String.format("DROP TABLE IF EXISTS \"%s\".\"%s\"", oldLogId.getSchema(), oldLogId.getTableName()));
+            connection.createStatement().executeUpdate(String.format("CREATE TABLE \"%s\".\"%s\" (\n" +
+                    "    entry_id        uuid      NOT NULL,\n" +
+                    "    txid            varchar   NOT NULL,\n" +
+                    "    entry_type      smallint  NOT NULL,\n" +
+                    "    node_id         varchar   NOT NULL,\n" +
+                    "    saga_name       varchar   NULL,\n" +
+                    "    data            json      NULL,\n" +
+                    "    PRIMARY KEY (entry_id, txid)\n" +
+                    ")", oldLogId.getSchema(), oldLogId.getTableName()));
+        }
+        PostgresSagaLog oldLog = new PostgresSagaLog(dataSource, oldLogId, new Random(), 1);
+        try {
+            Deque<SagaLogEntry> written = writeSuccessfulVanillaSagaExecutionEntries(oldLog, UUID.randomUUID().toString());
+            assertEquals(oldLog.readIncompleteSagas().collect(Collectors.toList()), List.copyOf(written));
+        } finally {
+            oldLog.truncate().join();
+            oldLog.close();
+        }
+    }
+
     private Deque<SagaLogEntry> writeSuccessfulVanillaSagaExecutionEntries(SagaLog sagaLog, String executionId) {
         Deque<SagaLogEntryBuilder> entryBuilders = new LinkedList<>();
         entryBuilders.add(sagaLog.builder().startSaga(executionId, "Vanilla-Saga", "{}"));

@@ -1,12 +1,12 @@
 package no.cantara.sagalog.file;
 
-import com.squareup.tape2.QueueFile;
 import no.cantara.sagalog.SagaLog;
 import no.cantara.sagalog.SagaLogEntry;
 import no.cantara.sagalog.SagaLogEntryBuilder;
 import no.cantara.sagalog.SagaLogEntryId;
 import no.cantara.sagalog.SagaLogEntryType;
 import no.cantara.sagalog.SagaLogId;
+import no.cantara.sagalog.file.queue.QueueFile;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
