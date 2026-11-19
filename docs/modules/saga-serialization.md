@@ -11,9 +11,11 @@ It serializes the graph only, not executions or log entries.
 | Method | Purpose |
 |---|---|
 | `SagaSerializer.toJson(Saga)` | The saga as a JSON string. |
-| `SagaSerializer.writeJson(Saga, Writer)` | The same, written to a `Writer`. |
+| `SagaSerializer.writeJson(Saga, Writer)` | The same, written to a `Writer`. A failing `Writer` gives `UncheckedIOException` ("Writing saga ... as JSON"), with the `IOException` as its cause. |
 | `SagaSerializer.writeJson(SagaNode, Writer)` | One node as JSON. |
 | `SagaDeserializer.fromJson(String)` | Builds and validates a `Saga` from JSON; throws `SagaException` if it is invalid. |
+
+Both classes hold static methods only, cannot be instantiated, and are stateless and thread-safe.
 
 ## Format
 
@@ -32,10 +34,17 @@ It serializes the graph only, not executions or log entries.
 ```
 
 - `saga` is the name; `nodes` lists every node once, in depth-first order from `S`.
-- Each node has its `id`, its `adapter` name and the ids of its `outgoing` nodes. Incoming links are derived.
+- Each node has its `id`, its `adapter` name and the ids of its `outgoing` nodes, in declaration order. Incoming
+  links are derived.
+- Every string is written as an escaped JSON string, so a saga name with quotes, backslashes, `{`, newlines or any
+  Unicode character survives a round trip.
 
 `fromJson` rebuilds the saga with the `saga-api` builder, so the same validation applies. It needs a node with id `S`;
 the `S` and `E` entries' adapter names are not read (the builder sets them).
+
+Every error is a `SagaException`: malformed JSON or a missing or mistyped field gives `De-serialization error: ...`
+with the parser's `org.json.JSONException` as the cause, and a graph error gives the builder's message. Up to 2.1.0
+the `JSONException` reached the caller as it was.
 
 ## Behaviour to know
 
