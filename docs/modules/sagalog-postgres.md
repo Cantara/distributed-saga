@@ -74,7 +74,8 @@ Closing the log unlocks it. So a log is written by one process at a time, cluste
 
 - Before 2.0.1 a log never gave its connection back, and `close()` left it idle in a transaction; opening a log again
   after `remove(logId)` returned the closed log. Both are fixed in 2.0.1.
-- `delete(logId)` only closes the log and forgets it; it does not drop its table.
+- `delete(logId)` drops the log's table and its row in `Locks`, holding the log's advisory lock while it does; it fails
+  with `SagaLogBusyException` if another process holds the log. It returns false if the table did not exist.
 - Names are put into SQL without quoting checks: use plain names for `cluster.owner`, `cluster.name`,
   `cluster.instance-id` and log names. PostgreSQL truncates identifiers longer than 63 bytes, so keep table names
   shorter than that.

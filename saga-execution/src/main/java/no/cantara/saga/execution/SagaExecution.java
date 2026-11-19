@@ -19,6 +19,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static java.util.Optional.ofNullable;
@@ -99,7 +100,9 @@ public class SagaExecution {
         // completed by the traversal; the completion future given to callers completes after onComplete has run
         SelectableFuture<SagaHandoffResult> traversalCompletionFuture = new SelectableFuture<>(null);
         SelectableFuture<SagaHandoffResult> completionFuture = new SelectableFuture<>(null);
-        traversalCompletionFuture.whenComplete((r, t) -> runOnCompleteThenComplete(executionId, onComplete, r, t, completionFuture));
+        // the first abort, so that a saga that fails for another reason at the same time still reports it
+        AtomicReference<AbortSagaException> firstAbort = new AtomicReference<>();
+        traversalCompletionFuture.whenComplete((r, t) -> runOnCompleteThenComplete(executionId, onComplete, r, attachAbort(t, firstAbort.get()), completionFuture));
         SagaTraversal sagaTraversal = new SagaTraversal(executorService, saga);
         CompletableFuture<SagaTraversalResult> futureTraversalResult = new CompletableFuture<>();
         Map<String, List<SagaLogEntry>> recoverySagaLogEntriesBySagaNodeId;
@@ -151,6 +154,7 @@ public class SagaExecution {
                 actionOutput = adapter.executeAction(ste.node, sagaInput, ste.outputByNode);
 
             } catch (AbortSagaException e) {
+                firstAbort.compareAndSet(null, e);
                 boolean firstToAbort = sagaTraversal.stopTraversal();
                 sagaLog.write(sagaLog.builder().abort(executionId, ste.node.id)).join();
                 if (!firstToAbort) {
@@ -180,6 +184,23 @@ public class SagaExecution {
         futureTraversalResult.complete(traversalResult);
 
         return new SagaHandoffControl(sagaInput, executionId, saga, sagaLog, adapterLoader, traversalResult, handoffFuture, completionFuture);
+    }
+
+    /**
+     * A saga that aborted while another node failed with a different exception fails with that exception, and no
+     * rollback runs; the abort is attached to it as a suppressed exception so it is not lost.
+     */
+    static Throwable attachAbort(Throwable sagaFailure, AbortSagaException abort) {
+        if (sagaFailure == null || abort == null || sagaFailure == abort) {
+            return sagaFailure;
+        }
+        for (Throwable suppressed : sagaFailure.getSuppressed()) {
+            if (suppressed == abort) {
+                return sagaFailure;
+            }
+        }
+        sagaFailure.addSuppressed(abort);
+        return sagaFailure;
     }
 
     private static void runOnCompleteThenComplete(String executionId,

@@ -9,7 +9,12 @@ import no.cantara.sagalog.SagaLogEntryType;
 import no.cantara.sagalog.SagaLogId;
 import no.cantara.sagalog.file.queue.QueueFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -196,67 +201,72 @@ public class FileSagaLog implements SagaLog, AutoCloseable {
         }
     }
 
+    /**
+     * Format version of an entry record; the first byte of every queue element.
+     */
+    static final byte FORMAT_VERSION = 2;
+
+    /**
+     * An entry as one queue element: the format version, the id, then executionId, entry type, nodeId, sagaName and
+     * data, each as a length-prefixed UTF-8 string (length -1 for null). Any text is stored as it is.
+     */
     byte[] serialize(SagaLogEntry entry) {
-        String serializedString = toString(entry.getId())
-                + " " + entry.getExecutionId()
-                + " " + entry.getEntryType()
-                + " " + entry.getNodeId()
-                + (entry.getSagaName() == null ? "" : " " + entry.getSagaName())
-                + (entry.getJsonData() == null ? "" : " " + entry.getJsonData());
-        return serializedString.getBytes(StandardCharsets.UTF_8);
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(64);
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeByte(FORMAT_VERSION);
+            out.writeLong(((FileSagaLogEntryId) entry.getId()).id);
+            writeString(out, entry.getExecutionId());
+            writeString(out, entry.getEntryType().name());
+            writeString(out, entry.getNodeId());
+            writeString(out, entry.getSagaName());
+            writeString(out, entry.getJsonData());
+            out.flush();
+            return bytes.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     SagaLogEntry deserialize(byte[] bytes) {
-        String serialized = new String(bytes, StandardCharsets.UTF_8);
-        SagaLogEntryBuilder builder = builder();
-
-        // mandatory log-fields
-
-        int idEndIndex = serialized.indexOf(' ');
-        String id = serialized.substring(0, idEndIndex);
-        serialized = serialized.substring(idEndIndex + 1);
-
-        builder.id(fromString(id));
-
-        int executionIdEndIndex = serialized.indexOf(' ');
-        String executionId = serialized.substring(0, executionIdEndIndex);
-        serialized = serialized.substring(executionIdEndIndex + 1);
-
-        builder.executionId(executionId);
-
-        int entryTypeEndIndex = serialized.indexOf(' ');
-        SagaLogEntryType entryType = SagaLogEntryType.valueOf(serialized.substring(0, entryTypeEndIndex));
-        serialized = serialized.substring(entryTypeEndIndex + 1);
-
-        builder.entryType(entryType);
-
-        int nodeIdEndIdex = serialized.indexOf(' ');
-        if (nodeIdEndIdex == -1) {
-            return builder.nodeId(serialized).build();
-        }
-
-        String nodeId = serialized.substring(0, nodeIdEndIdex);
-        serialized = serialized.substring(nodeIdEndIdex + 1);
-
-        builder.nodeId(nodeId);
-
-        // optional log-fields
-        if ("S".equals(nodeId)) {
-            int jsonDataBeginIndex = serialized.indexOf('{');
-            if (jsonDataBeginIndex == -1) {
-                String sagaName = serialized.substring(0, serialized.length() - 1);
-                return builder.sagaName(sagaName).build();
+        try {
+            DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes));
+            byte version = in.readByte();
+            if (version != FORMAT_VERSION) {
+                throw new IllegalStateException(String.format("Saga-log %s holds an entry in an unsupported format "
+                        + "(version byte %d, expected %d). Logs written before 2.0.1 cannot be read: let their sagas "
+                        + "finish with the old version, or delete the log file.", sagaLogId.getPath(), version, FORMAT_VERSION));
             }
-            String sagaName = serialized.substring(0, jsonDataBeginIndex - 1);
-            String jsonData = serialized.substring(jsonDataBeginIndex);
-            return builder.sagaName(sagaName).jsonData(jsonData).build();
-        }
-
-        int jsonDataBeginIndex = serialized.indexOf('{');
-        if (jsonDataBeginIndex == -1) {
+            SagaLogEntryBuilder builder = builder();
+            builder.id(new FileSagaLogEntryId(in.readLong()));
+            builder.executionId(readString(in));
+            builder.entryType(SagaLogEntryType.valueOf(readString(in)));
+            builder.nodeId(readString(in));
+            builder.sagaName(readString(in));
+            builder.jsonData(readString(in));
             return builder.build();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Corrupt saga-log entry in " + sagaLogId.getPath(), e);
         }
-        String jsonData = serialized.substring(jsonDataBeginIndex);
-        return builder.jsonData(jsonData).build();
+    }
+
+    private static void writeString(DataOutputStream out, String value) throws IOException {
+        if (value == null) {
+            out.writeInt(-1);
+            return;
+        }
+        byte[] utf8 = value.getBytes(StandardCharsets.UTF_8);
+        out.writeInt(utf8.length);
+        out.write(utf8);
+    }
+
+    private static String readString(DataInputStream in) throws IOException {
+        int length = in.readInt();
+        if (length == -1) {
+            return null;
+        }
+        byte[] utf8 = new byte[length];
+        in.readFully(utf8);
+        return new String(utf8, StandardCharsets.UTF_8);
     }
 }

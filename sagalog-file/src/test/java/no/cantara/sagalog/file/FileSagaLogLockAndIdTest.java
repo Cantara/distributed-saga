@@ -85,4 +85,39 @@ public class FileSagaLogLockAndIdTest {
         assertEquals(read, List.of(no.cantara.sagalog.SagaLogEntryType.values()));
         log.close();
     }
+
+    @Test
+    public void thatAnyTextIsStoredAsItIs() throws Exception {
+        String big = "x".repeat(1_000_000);
+        List<String> data = java.util.Arrays.asList("OK", "[1,2]", "\"a json string\"", "two words", "", null,
+                "æøå ✓ \n tab\t{not json", "{\"a\":1}", big);
+        FileSagaLog log = new FileSagaLog(logId);
+        log.write(new SagaLogEntryBuilder().startSaga("exec with spaces", "a saga name", "input that is not json")).join();
+        for (String d : data) {
+            log.write(new SagaLogEntryBuilder().endAction("exec with spaces", "node", d)).join();
+        }
+        log.close();
+
+        FileSagaLog reopened = new FileSagaLog(logId);
+        List<SagaLogEntry> entries = reopened.readIncompleteSagas().collect(Collectors.toList());
+        assertEquals(entries.get(0).getSagaName(), "a saga name");
+        assertEquals(entries.get(0).getJsonData(), "input that is not json");
+        assertEquals(entries.get(0).getExecutionId(), "exec with spaces");
+        assertEquals(entries.subList(1, entries.size()).stream().map(SagaLogEntry::getJsonData).collect(Collectors.toList()), data);
+        // a saga name without data keeps its last character
+        reopened.write(new SagaLogEntryBuilder().startSaga("e2", "name", null)).join();
+        assertEquals(reopened.readEntries("e2").findFirst().orElseThrow().getSagaName(), "name");
+        reopened.close();
+    }
+
+    @Test
+    public void thatALogInTheOldFormatIsRefused() throws Exception {
+        no.cantara.sagalog.file.queue.QueueFile old = new no.cantara.sagalog.file.queue.QueueFile.Builder(logId.getPath().toFile()).build();
+        old.add("0 exec Start S saga {}".getBytes(java.nio.charset.StandardCharsets.UTF_8)); // the format before 2.0.1
+        old.close();
+        IllegalStateException e = expectThrows(IllegalStateException.class, () -> new FileSagaLog(logId));
+        assertTrue(e.getMessage().contains("unsupported format"), e.getMessage());
+        // the failed open released its lock: another open fails on the format again, not with SagaLogBusyException
+        expectThrows(IllegalStateException.class, () -> new FileSagaLog(logId));
+    }
 }

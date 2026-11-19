@@ -74,52 +74,80 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
 
     @Override
     public SagaLog tryAcquire(SagaLogOwner owner) throws SagaLogBusyException, SagaLogAlreadyAquiredByOtherOwnerException {
-        SagaLogId sagaLogId = availableInstanceLocalIds.poll();
-        if (sagaLogId == null) {
-            return null; // no available saga-logs right now
-        }
-        boolean lockAcquired = false;
-        try {
-            SagaLog sagaLog = tryTakeOwnership(owner, sagaLogId);
-            if (sagaLog == null) {
-                throw new IllegalStateException("instance-local saga-log-id was available, but lock was unavailable.");
+        while (true) {
+            SagaLogId sagaLogId = availableInstanceLocalIds.poll();
+            if (sagaLogId == null) {
+                return null; // no available saga-logs right now
             }
-            lockAcquired = true;
+            SagaLog sagaLog = takeAvailable(owner, sagaLogId, () -> tryTakeOwnership(owner, sagaLogId));
+            if (sagaLog != null) {
+                return sagaLog;
+            }
+            // taken by tryTakeOwnership in the meantime; its holder makes it available again on release
+        }
+    }
+
+    @FunctionalInterface
+    private interface Take {
+        SagaLog take();
+    }
+
+    private SagaLog takeAvailable(SagaLogOwner owner, SagaLogId sagaLogId, Take take) {
+        boolean done = false;
+        try {
+            SagaLog sagaLog = take.take();
+            done = true;
             return sagaLog;
         } finally {
-            if (!lockAcquired) {
-                availableInstanceLocalIds.addFirst(sagaLogId);
+            if (!done) {
+                makeAvailable(sagaLogId, true); // failed to connect: keep it available for a later attempt
             }
         }
     }
 
     @Override
     public SagaLog tryAcquire(SagaLogOwner owner, int timeout, TimeUnit unit) throws InterruptedException, SagaLogBusyException, SagaLogAlreadyAquiredByOtherOwnerException {
-        SagaLogId sagaLogId = availableInstanceLocalIds.poll(timeout, unit);
-        if (sagaLogId == null) {
-            return null; // timeout
-        }
-        boolean lockAcquired = false;
-        try {
-            SagaLog sagaLog = tryTakeOwnership(owner, sagaLogId, timeout, unit);
-            if (sagaLog == null) {
-                throw new IllegalStateException("instance-local saga-log-id was available, but lock was unavailable.");
+        long deadline = System.nanoTime() + unit.toNanos(timeout);
+        while (true) {
+            long remaining = deadline - System.nanoTime();
+            SagaLogId sagaLogId = availableInstanceLocalIds.poll(Math.max(0, remaining), TimeUnit.NANOSECONDS);
+            if (sagaLogId == null) {
+                return null; // timeout
             }
-            lockAcquired = true;
-            return sagaLog;
-        } finally {
-            if (!lockAcquired) {
-                availableInstanceLocalIds.addFirst(sagaLogId);
+            SagaLog sagaLog = takeAvailable(owner, sagaLogId, () -> tryTakeOwnership(owner, sagaLogId));
+            if (sagaLog != null) {
+                return sagaLog;
             }
+            // taken by tryTakeOwnership in the meantime; its holder makes it available again on release
         }
     }
 
+    /**
+     * Same as {@link #releaseOwnership(SagaLogId)}: a registered instance-local log becomes available again once it is
+     * not owned.
+     */
     @Override
     public void release(SagaLogId logId) {
-        try {
-            releaseOwnership(logId);
-        } finally {
-            if (registeredInstanceLocalSagaLogIds.contains(logId)) {
+        releaseOwnership(logId);
+    }
+
+    /**
+     * A registered instance-local log is available (in the queue for tryAcquire) exactly when nobody owns it, and is
+     * in the queue at most once.
+     */
+    private void makeAvailable(SagaLogId logId, boolean first) {
+        if (!registeredInstanceLocalSagaLogIds.contains(logId)) {
+            return;
+        }
+        synchronized (availableInstanceLocalIds) {
+            Semaphore semaphore = exclusiveLockByLogId.get(logId);
+            boolean owned = semaphore != null && semaphore.availablePermits() == 0;
+            if (owned || availableInstanceLocalIds.contains(logId)) {
+                return;
+            }
+            if (first) {
+                availableInstanceLocalIds.addFirst(logId);
+            } else {
                 availableInstanceLocalIds.addLast(logId);
             }
         }
@@ -145,7 +173,9 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
             if (semaphore.availablePermits() > 0) {
                 throw new IllegalStateException("More than one permit available. Most likely the saga-log was released when no ownership or lock/permit is held.");
             }
-            return (sagaLog = doAssignPoolLocalOwnership(owner, logId));
+            sagaLog = doAssignPoolLocalOwnership(owner, logId);
+            availableInstanceLocalIds.remove(logId); // owned: not available until released
+            return sagaLog;
         } finally {
             if (sagaLog == null) {
                 exclusiveLockByLogId.get(logId).release();
@@ -164,7 +194,9 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
             if (semaphore.availablePermits() > 0) {
                 throw new IllegalStateException("Acquired permit, but there are still permits available. Someone has released this saga-log-id when no ownership or lock/permit is held.");
             }
-            return (sagaLog = doAssignPoolLocalOwnership(owner, logId));
+            sagaLog = doAssignPoolLocalOwnership(owner, logId);
+            availableInstanceLocalIds.remove(logId); // owned: not available until released
+            return sagaLog;
         } finally {
             if (sagaLog == null) {
                 exclusiveLockByLogId.get(logId).release();
@@ -183,6 +215,7 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
             }
             semaphore.release();
         }
+        makeAvailable(logId, false);
     }
 
     @Override

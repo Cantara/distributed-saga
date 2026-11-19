@@ -4,6 +4,27 @@
 
 ### Breaking changes and how to migrate
 
+- **The file saga log has a new entry format.** Each entry is a versioned binary record with length-prefixed fields,
+  so any text is stored as it is: data that is not a JSON object, spaces in ids and names, empty strings, `null` and
+  large data. Before, data not starting with `{` was read back as `null`, a space in an execution id made the log
+  unreadable, and a saga name stored without data lost its last character. **Migration:** logs written before 2.0.1
+  cannot be read (opening one fails with `IllegalStateException`, "unsupported format"): let their sagas finish with
+  the old version, or delete the log files, before upgrading.
+- **`delete(logId)` on the PostgreSQL saga log drops the log's table and its row in `Locks`**, holding the log's
+  advisory lock while it does, and fails with `SagaLogBusyException` if another process holds the log. It returns
+  whether the table existed. Before, it only closed the log, so the tables of departed instances stayed and were found
+  again by `clusterWideLogIds()` on every recovery pass. **Migration:** call `delete` only for logs whose entries you no
+  longer need.
+- **The saga-log pool keeps one availability state per instance-local log: available exactly when nobody owns it, at
+  most once.** `tryTakeOwnership` of a registered local log now makes it unavailable to `tryAcquire`, and
+  `releaseOwnership` makes it available again, as `release` does (the two are now the same). Before, `release` added the
+  id again without checking, so each `tryTakeOwnership`/`release` pair added a duplicate (Linked Data Store measured 3
+  ids growing to 21 in 6 s of recovery), and `tryAcquire` could pick a log another caller held and throw
+  `IllegalStateException`; it now skips it and returns `null` when no log is free. **Migration:** code that relied on
+  `releaseOwnership` keeping a local log out of `tryAcquire` must not register that log as instance-local.
+- **`SagaLogPool.remove` documentation corrected:** it does not require the log to be released first, and never did;
+  the safe order is own, remove, release.
+
 - **Compensation is run and logged only for steps that have a compensating action, and the last log entry of a step
   decides its state.** Before, a rollback wrote `Comp` for every ended step, also when its compensating action did
   nothing, and recovery and rollback judged a step by whether *any* `End` or `Abort` entry existed (taking the first
@@ -26,6 +47,10 @@
     forward recovery would run those steps again. Let such executions finish, or truncate the logs, before upgrading.
 
 ### Fixed
+
+- **An abort next to another failure is no longer lost.** If one node threw `AbortSagaException` while another failed
+  with a different exception, the saga failed with the other exception and the abort disappeared; it is now attached
+  as a suppressed exception. No rollback runs in that case, as before: the saga is left for forward recovery.
 
 - **A failed saga no longer leaves a pool thread blocked for ever.** When an action threw something other than
   `AbortSagaException` in a node that has a sibling, the walk waiting at the join for that node blocked in

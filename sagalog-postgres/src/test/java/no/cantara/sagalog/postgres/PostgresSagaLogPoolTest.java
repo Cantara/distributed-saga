@@ -53,7 +53,7 @@ public class PostgresSagaLogPoolTest {
         // earlier test, in this class or another, shows up here. PostgresSagaLogTest uses
         // the same namespace and leaves 'the-saga-log' behind, which is what broke
         // thatClusterWideLogIdsAreTheSameAsInstanceLocalLogIds.
-        // Neither truncate() nor delete() drops the table, so the schema has to go.
+        // A test may leave tables behind (truncate() keeps them), so the schema has to go.
         try {
             cleanDatabase(configuration, new EmbeddedPostgresDataSource("postgres", "postgres", "postgres"));
         } catch (SQLException e) {

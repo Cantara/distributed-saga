@@ -75,8 +75,8 @@ public interface SagaLogPool {
 
     /**
      * Close and then remove (but does not release) the saga-log with the given logId from the pool. This will cause
-     * subsequent calls to acquire on the same logId to re-connect to the log. Note that if the log is not already
-     * released when this method is called, then this method will throw an IllegalStateException.
+     * subsequent calls to acquire on the same logId to re-connect to the log. Call it while you still own the log:
+     * own it, remove it, then release it. Ownership is not changed by this method.
      *
      * @param logId
      */
@@ -102,8 +102,8 @@ public interface SagaLogPool {
     SagaLog tryAcquire(SagaLogOwner owner, int timeout, TimeUnit unit) throws InterruptedException, SagaLogBusyException, SagaLogAlreadyAquiredByOtherOwnerException;
 
     /**
-     * Releases ownership, then returns the saga-log with the given logId to the pool making it available through the
-     * tryAcquire methods again.
+     * Same as {@link #releaseOwnership(SagaLogId)}. A registered instance-local log is available through the tryAcquire
+     * methods exactly when nobody owns it, and at most once.
      *
      * @param logId
      */
@@ -139,7 +139,8 @@ public interface SagaLogPool {
     SagaLog tryTakeOwnership(SagaLogOwner owner, SagaLogId logId, long timeout, TimeUnit unit) throws InterruptedException, SagaLogBusyException, SagaLogAlreadyAquiredByOtherOwnerException;
 
     /**
-     * Release ownership of the saga-log with the given logId.
+     * Release ownership of the saga-log with the given logId. A registered instance-local log becomes available through
+     * the tryAcquire methods again, however it was taken (tryAcquire or tryTakeOwnership).
      *
      * @param logId
      */
