@@ -1,6 +1,5 @@
 package no.cantara.sagalog.postgres;
 
-import de.huxhorn.sulky.ulid.ULID;
 import no.cantara.sagalog.SagaLog;
 import no.cantara.sagalog.SagaLogBusyException;
 import no.cantara.sagalog.SagaLogEntry;
@@ -32,8 +31,7 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(PostgresSagaLog.class);
 
-    final ULID ulid = new ULID();
-    final AtomicReference<ULID.Value> prevUlid = new AtomicReference<>(ulid.nextValue());
+    final AtomicReference<UUID> prevId = new AtomicReference<>(UuidV7.generate());
 
     final Random random;
     final PostgresDataSource dataSource;
@@ -299,13 +297,13 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
         }
     }
 
-    public ULID.Value generateId() {
-        ULID.Value previousUlid = prevUlid.get();
-        ULID.Value next = ulid.nextStrictlyMonotonicValue(previousUlid).orElse(null);
-        while (next == null || !prevUlid.compareAndSet(previousUlid, next)) {
+    public UUID generateId() {
+        UUID previousId = prevId.get();
+        UUID next = UuidV7.next(previousId);
+        while (!prevId.compareAndSet(previousId, next)) {
             Thread.yield();
-            previousUlid = prevUlid.get();
-            next = ulid.nextStrictlyMonotonicValue(previousUlid).orElse(null);
+            previousId = prevId.get();
+            next = UuidV7.next(previousId);
         }
         return next;
     }
@@ -319,7 +317,7 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
     public CompletableFuture<SagaLogEntry> write(SagaLogEntryBuilder builder) {
         checkNotClosed();
         return CompletableFuture.supplyAsync(() -> {
-            ULID.Value entryId = generateId();
+            UUID entryId = generateId();
             SagaLogEntry entry = builder
                     .id(new PostgresSagaLogEntryId(entryId))
                     .build();
@@ -328,7 +326,7 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
                     String sql = String.format("INSERT INTO \"%s\".\"%s\" (txid, entry_id, entry_type, node_id, saga_name, data) VALUES(?, ?, ?, ?, ?, ?)", sagaLogId.getSchema(), sagaLogId.getTableName());
                     try (PreparedStatement ps = connection.prepareStatement(sql)) {
                         ps.setString(1, entry.getExecutionId());
-                        ps.setObject(2, new UUID(entryId.getMostSignificantBits(), entryId.getLeastSignificantBits()));
+                        ps.setObject(2, entryId);
                         ps.setShort(3, PostgresSagaTools.toShort(entry.getEntryType()));
                         ps.setString(4, entry.getNodeId());
                         ps.setString(5, entry.getSagaName());
@@ -354,8 +352,7 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
                 String sql = String.format("DELETE FROM \"%s\".\"%s\" WHERE entry_id <= ?", sagaLogId.getSchema(), sagaLogId.getTableName());
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     PostgresSagaLogEntryId entryId = (PostgresSagaLogEntryId) _entryId;
-                    UUID uuid = new UUID(entryId.id.getMostSignificantBits(), entryId.id.getLeastSignificantBits());
-                    ps.setObject(1, uuid);
+                    ps.setObject(1, entryId.id);
                     ps.executeUpdate();
                 }
             } catch (SQLException e) {
@@ -432,7 +429,7 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
         String node_id = rs.getString("node_id");
         String saga_name = rs.getString("saga_name");
         String data = rs.getString("data");
-        PostgresSagaLogEntryId entryId = new PostgresSagaLogEntryId(new ULID.Value(entry_id.getMostSignificantBits(), entry_id.getLeastSignificantBits()));
+        PostgresSagaLogEntryId entryId = new PostgresSagaLogEntryId(entry_id);
         SagaLogEntryType entryType = PostgresSagaTools.fromShort(entry_type);
         return new SagaLogEntryBuilder()
                 .executionId(txid)
@@ -457,17 +454,17 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
 
     @Override
     public PostgresSagaLogEntryId fromString(String id) {
-        return new PostgresSagaLogEntryId(ULID.parseULID(id));
+        return new PostgresSagaLogEntryId(UUID.fromString(id));
     }
 
     @Override
     public byte[] toBytes(SagaLogEntryId id) {
-        return ((PostgresSagaLogEntryId) id).id.toBytes();
+        return UuidV7.toBytes(((PostgresSagaLogEntryId) id).id);
     }
 
     @Override
     public SagaLogEntryId fromBytes(byte[] idBytes) {
-        return new PostgresSagaLogEntryId(ULID.fromBytes(idBytes));
+        return new PostgresSagaLogEntryId(UuidV7.fromBytes(idBytes));
     }
 
     @Override
