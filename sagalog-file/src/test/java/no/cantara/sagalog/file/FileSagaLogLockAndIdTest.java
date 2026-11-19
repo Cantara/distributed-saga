@@ -43,7 +43,7 @@ public class FileSagaLogLockAndIdTest {
 
         FileSagaLog second = new FileSagaLog(logId);
         SagaLogEntry c = second.write(start("e3")).join();
-        assertTrue(((FileSagaLogEntryId) c.getId()).id > ((FileSagaLogEntryId) b.getId()).id,
+        assertTrue(((FileSagaLogEntryId) c.getId()).id() > ((FileSagaLogEntryId) b.getId()).id(),
                 "id after restart " + c.getId() + " must follow " + b.getId());
 
         // truncate(id) of the entry written before the restart removes only the entries up to it

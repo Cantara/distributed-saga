@@ -7,12 +7,17 @@ import no.cantara.sagalog.SagaLogBusyException;
 import no.cantara.sagalog.SagaLogId;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 class FileSagaLogPool extends AbstractSagaLogPool {
+
+    private static final System.Logger LOG = System.getLogger(FileSagaLogPool.class.getName());
 
     private final Path folder;
 
@@ -26,17 +31,33 @@ class FileSagaLogPool extends AbstractSagaLogPool {
         return new FileSagaLogId(folder, clusterInstanceId, logName);
     }
 
+    /**
+     * Every {@code *.sagalog} file in the folder. A file with that suffix whose name is not a saga-log id is skipped
+     * with a warning.
+     *
+     * @throws UncheckedIOException if the folder cannot be listed
+     */
     @Override
     public Set<SagaLogId> clusterWideLogIds() {
-        try {
-            return Files.list(folder)
-                    .filter(p -> p.toFile().getName().endsWith(".sagalog"))
-                    .map(Path::toAbsolutePath)
-                    .map(path -> new FileSagaLogId(path))
-                    .collect(Collectors.toSet());
+        Set<SagaLogId> ids = new HashSet<>();
+        try (Stream<Path> paths = Files.list(folder)) {
+            for (Iterator<Path> it = paths.iterator(); it.hasNext(); ) {
+                Path path = it.next();
+                if (!path.getFileName().toString().endsWith(".sagalog")) {
+                    continue;
+                }
+                try {
+                    ids.add(new FileSagaLogId(path.toAbsolutePath()));
+                } catch (IllegalArgumentException | IllegalStateException e) {
+                    LOG.log(System.Logger.Level.WARNING, "Skipping a file that is not a saga-log: {0} ({1})", path, e.getMessage());
+                }
+            }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException("Cannot list the saga-log folder " + folder, e);
+        } catch (UncheckedIOException e) {
+            throw new UncheckedIOException("Cannot list the saga-log folder " + folder, e.getCause());
         }
+        return ids;
     }
 
     @Override
@@ -44,15 +65,25 @@ class FileSagaLogPool extends AbstractSagaLogPool {
         return new FileSagaLog(logId);
     }
 
+    /**
+     * Deletes the log file and its lock file, holding the log's lock while it does.
+     *
+     * @throws SagaLogBusyException if another process, or an open log in this process, holds the log
+     * @throws UncheckedIOException if a file cannot be deleted
+     */
     @Override
     protected boolean deleteExternal(SagaLogId logId) {
+        Path path = ((FileSagaLogId) logId).getPath();
         try {
-            Path path = ((FileSagaLogId) logId).getPath();
-            boolean deleted = Files.deleteIfExists(path);
-            Files.deleteIfExists(FileSagaLog.lockPath(path));
+            boolean deleted;
+            try (FileSagaLogLock lock = FileSagaLogLock.acquire(path)) {
+                deleted = Files.deleteIfExists(path);
+                Files.deleteIfExists(lock.file()); // while it is held: see "One open log per file" in the docs
+            }
+            Directories.sync(path.getParent());
             return deleted;
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException("Cannot delete saga-log " + path, e);
         }
     }
 }
