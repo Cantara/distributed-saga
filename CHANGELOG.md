@@ -37,6 +37,24 @@ unchanged; only the version changes from 1.0.x to 2.0.0.
   order, which can differ after deletes. The `SagaLog` Javadoc now states the order, and that `readIncompleteSagas()`
   returns every entry in the log, including those of finished sagas that have not been truncated yet.
 
+- **`sagalog-postgres`: the `data` column is `text`, not `json`.** An entry's data (`SagaLogEntry.getJsonData()`)
+  is whatever the action's serializer produced, which need not be JSON: the default
+  `ActionOutputSerializerToStringAndStringConstructor` writes an `Adapter<String>`'s output as bare text. The memory
+  and file logs always stored it as it was; the PostgreSQL log refused it. New tables get a `text` column, and
+  data is written untyped, so tables created before 2.0.0 keep working for JSON data. To store non-JSON data in such a
+  table, migrate it once per saga-log table:
+  `ALTER TABLE "<schema>"."<table>" ALTER COLUMN data TYPE text;` (lossless).
+
+### Java module system
+
+- `no.cantara.saga.execution` now `requires transitive` `no.cantara.saga.api`, `no.cantara.sagalog` and
+  `no.cantara.concurrent.futureselector`; `no.cantara.saga.serialization` now `requires transitive`
+  `no.cantara.saga.api`. These types appear in their public API, so a module that requires them now reads the others
+  too; `requires` you wrote for them yourself still work.
+- Known: `no.cantara.sagalog.file` requires `tape`, an automatic module whose name comes from the jar file name
+  (tape 2.0.0-beta1 has no module name). `no.cantara.sagalog.postgres` requires `org.postgresql.jdbc`, an automatic
+  module with a stable name from the driver's manifest.
+
 ### Dependencies
 
 - HikariCP 6.3.3 → 7.1.0, org.json 20250517 → 20260814, undertow 2.3.20.Final → 2.4.4.Final (sample),
