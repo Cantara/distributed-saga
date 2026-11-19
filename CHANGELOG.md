@@ -15,6 +15,19 @@
     failure.
   - `saga-execution`: a walk that selects a failed dependency now ends with that failure. The outcome of the saga is
     unchanged: the completion future fails with the action's exception, and nothing is rolled back.
+- **The PostgreSQL saga log gives its connection back when it is closed.** `PostgresSagaLog.close()` released the
+  advisory lock but kept the connection, and left it idle in an open transaction. An application that recovers other
+  instances' logs (take ownership, read, truncate, `remove`, `delete`) used up one connection per log on every pass,
+  until the HikariCP pool was exhausted and recovery failed with `SQLTransientConnectionException`. Those
+  transactions also held a snapshot in PostgreSQL for the life of the process. Reported by Linked Data Store.
+  - `close()` (called by `remove`, `delete` and `shutdown`) now releases the lock, commits, and closes the connection,
+    which returns it to the pool.
+  - A log that cannot be opened (for example `SagaLogBusyException` because another process holds the lock) no
+    longer keeps the connection it used.
+  - `connect(logId)` after `remove(logId)` now opens the log again; before, it returned the closed log, which failed
+    on every use.
+  - A `write` or `truncate` that runs after `close()` fails with "already closed" instead of writing on a new
+    connection without the lock.
 
 ## 2.0.0 (2026-11-19)
 
