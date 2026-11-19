@@ -158,7 +158,7 @@ class SagaTraversal {
                 try {
                     selectableFuture = selected.future.get();
                 } catch (InterruptedException | ExecutionException e) {
-                    Utils.launder(e);
+                    throw Utils.launder(e); // a node this one depends on failed: end this walk
                 }
                 selector.add(selectableFuture, selected.control);
             }

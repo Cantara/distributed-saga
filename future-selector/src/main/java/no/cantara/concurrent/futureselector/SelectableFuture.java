@@ -30,7 +30,9 @@ public class SelectableFuture<V> extends CompletableFuture<V> implements Runnabl
     }
 
     SelectableFuture<V> registerWithDoneQueueAndMarkSelectableIfDone(BlockingQueue<Selection> doneQueue, Selection selection) {
-        thenAccept(v -> {
+        // whenComplete, not thenAccept: a future that completes exceptionally must be selectable too, or a caller
+        // waiting in select() for it waits for ever
+        whenComplete((v, t) -> {
             if (!doneQueue.offer(selection)) {
                 throw new IllegalStateException("Unable to offer this Future instance to doneQueue.");
             }

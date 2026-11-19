@@ -97,7 +97,7 @@ public class SagaTraversalResult {
             try {
                 nodeIdsWalked.addAll(threadWalk.get()); // will never block
             } catch (InterruptedException | ExecutionException e) {
-                launder(e);
+                throw launder(e);
             }
         }
 

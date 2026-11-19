@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.0.1 (unreleased)
+
+### Fixed
+
+- **A failed saga no longer leaves a pool thread blocked for ever.** When an action threw something other than
+  `AbortSagaException` in a node that has a sibling, the walk waiting at the join for that node blocked in
+  `FutureSelector.select()` for good, holding a thread of the saga's `SelectableThreadPoolExectutor`. Each such failure
+  cost one thread until the executor was shut down with `shutdownNow`, and `SagaTraversalResult.waitForCompletion…`
+  never returned, even with a timeout. Reported by Linked Data Store.
+  - `future-selector`: a `SelectableFuture` that completes exceptionally is now selected by `FutureSelector`, like one
+    that completes normally. Before, it was never selected and `select()` waited for ever. Callers that select futures
+    should check the selected future (`get()` throws for a failed one); code that waited for ever before now gets the
+    failure.
+  - `saga-execution`: a walk that selects a failed dependency now ends with that failure. The outcome of the saga is
+    unchanged: the completion future fails with the action's exception, and nothing is rolled back.
+
 ## 2.0.0 (2026-11-19)
 
 Released on Cantara's repository (`mvnrepo.cantara.no`), not on Maven Central. The group ids and artifact ids are

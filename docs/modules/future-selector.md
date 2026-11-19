@@ -42,8 +42,9 @@ while (selector.pending()) {
 
 ## Behaviour to know
 
-- Only futures that complete *normally* become selectable. A future that completes exceptionally is never selected,
-  so `select()` waits for ever for it. Check failed futures yourself, or make the task catch its own exceptions.
+- A future is selectable when it completes, normally or exceptionally. Check the selected future
+  (`isCompletedExceptionally()`, or `get()`, which throws for a failed one). Before 2.0.1 a future that failed was never
+  selected, and `select()` waited for ever for it.
 - `select(timeout, unit)` counts a timed-out call as a selection: after a timeout, `pending()` reports one future fewer
   than are actually unselected.
 - Cancelling a `SelectableFuture` does not interrupt its running task.
