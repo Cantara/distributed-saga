@@ -12,9 +12,8 @@ anything else:
 - `onComplete` is called with a failure result, and the completion future fails with that exception;
 - the execution's log entries stay as they are, without `End` on `E`, so the execution looks unfinished and recovery
   will run it again;
-- walks of the same saga that wait at a join node for the failed node never finish and keep their pool threads,
-  and `SagaTraversalResult.waitForCompletion…` never returns, even with a timeout. The cause is in
-  [future-selector](modules/future-selector.md#behaviour-to-know): a future that fails is never selected.
+- walks of the same saga that wait at a join node for the failed node end with that failure and free their pool
+  threads (before 2.0.1 they stayed blocked for ever, one pool thread per failed saga).
 
 Catch the exceptions you expect inside your actions, and throw `AbortSagaException` when the saga must be rolled back.
 
@@ -23,8 +22,7 @@ Catch the exceptions you expect inside your actions, and throw `AbortSagaExcepti
 A walk that reaches a join node waits on its pool thread. If the pool has fewer threads than the branches that wait
 at the same time, the walks that would complete the join stay in the queue, and the saga stops. A
 `ThreadPoolExecutor` with an unbounded queue never adds threads above its core size. Size the core of the pool for the
-widest saga times the number of sagas you run at once, and see the previous section: a failed saga can hold threads
-for good.
+widest saga times the number of sagas you run at once.
 
 ## Rollback of a node that started but did not end
 
