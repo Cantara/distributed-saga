@@ -65,7 +65,7 @@ The response holds the execution id, the handoff and execution times, the saga d
     `truncate(id)` of its last entry. The entries of a saga that failed without a rollback are kept, for recovery at
     the next start-up; `truncate(id)` removes every entry before it as well, so the handler truncates only a log that
     holds no other execution's entries;
-  - `release(logId)` makes the log free again.
+  - `releaseOwnership(owner, logId)` makes the log free again; it checks that the owner is the one that holds the log.
 - The shade configuration merges `META-INF/services` (`ServicesResourceTransformer`), which a fat jar of these
   libraries needs.
 

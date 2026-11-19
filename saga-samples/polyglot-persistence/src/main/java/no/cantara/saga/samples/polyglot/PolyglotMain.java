@@ -28,7 +28,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * <li>at start-up, a fixed set of instance-local saga logs is registered;</li>
  * <li>before the server starts, recovery completes the unfinished sagas in those logs;</li>
  * <li>per request, {@link PolyglotHttpHandler} acquires a free log with {@code tryAcquire(owner, timeout)}, runs the
- * saga, truncates the execution's entries when it has finished, and releases the log.</li>
+ * saga, truncates the execution's entries when it has finished, and releases the log with
+ * {@code releaseOwnership(owner, logId)}.</li>
  * </ol>
  */
 @SuppressWarnings("deprecation") // SagaExecution takes the executor under its old name
@@ -106,7 +107,7 @@ public class PolyglotMain {
             try {
                 recoveredExecutionIds.addAll(PolyglotRecovery.recover(sagaLog, pool, PolyglotSaga.SAGAS_BY_NAME, adapterLoader));
             } finally {
-                sagaLogPool.release(logId);
+                sagaLogPool.releaseOwnership(owner, logId);
             }
         }
     }

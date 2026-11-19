@@ -91,12 +91,13 @@ public class PolyglotMainTest {
          */
         SagaLogPool crashedPool = sagaLogPool(configuration);
         SagaLogId logId = crashedPool.registerInstanceLocalIdFor(PolyglotMain.SAGA_LOG_NAME_PREFIX + 0);
-        SagaLog crashedLog = crashedPool.tryTakeOwnership(new SagaLogOwner("crashed"), logId);
+        SagaLogOwner crashed = new SagaLogOwner("crashed");
+        SagaLog crashedLog = crashedPool.tryTakeOwnership(crashed, logId);
         JSONObject input = new JSONObject().put("resource-path", "/crashed").put("data", "Hello crash");
         crashedLog.write(crashedLog.builder().startSaga(executionId, PolyglotSaga.NAME, input.toString())).join();
         crashedLog.write(crashedLog.builder().startAction(executionId, "rdbms")).join();
         crashedLog.write(crashedLog.builder().endAction(executionId, "rdbms", new JSONObject().put("logged", true).toString())).join();
-        crashedPool.release(logId);
+        crashedPool.releaseOwnership(crashed, logId);
         crashedPool.shutdown();
 
         AtomicInteger rdbmsRuns = new AtomicInteger();
@@ -184,12 +185,13 @@ public class PolyglotMainTest {
     }
 
     private static List<SagaLogEntry> entriesOf(SagaLogPool pool, SagaLogId logId) {
-        SagaLog log = pool.tryTakeOwnership(new SagaLogOwner("test"), logId);
+        SagaLogOwner owner = new SagaLogOwner("test");
+        SagaLog log = pool.tryTakeOwnership(owner, logId);
         assertNotNull(log, "log " + logId + " is free");
         try {
             return log.readIncompleteSagas().collect(Collectors.toList());
         } finally {
-            pool.release(logId);
+            pool.releaseOwnership(owner, logId);
         }
     }
 

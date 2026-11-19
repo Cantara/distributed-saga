@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 @SuppressWarnings("deprecation") // SagaExecution takes the executor under its old name
 public class PolyglotHttpHandler implements HttpHandler {
 
-    static final int ACQUIRE_TIMEOUT_SECONDS = 5;
+    static final long ACQUIRE_TIMEOUT_SECONDS = 5;
 
     private final SelectableThreadPoolExectutor executorService;
     private final SagaLogPool sagaLogPool;
@@ -95,9 +95,10 @@ public class PolyglotHttpHandler implements HttpHandler {
              * Acquire a free saga log for this execution
              */
             String executionId = UUID.randomUUID().toString();
+            SagaLogOwner owner = new SagaLogOwner(executionId);
             SagaLog sagaLog;
             try {
-                sagaLog = sagaLogPool.tryAcquire(new SagaLogOwner(executionId), ACQUIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                sagaLog = sagaLogPool.tryAcquire(owner, ACQUIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 send(exchange, 503, "text/plain", "Interrupted while waiting for a saga log");
@@ -141,7 +142,7 @@ public class PolyglotHttpHandler implements HttpHandler {
 
                 truncateIfFinished(sagaLog, executionId, sagaLogEntries);
             } finally {
-                sagaLogPool.release(sagaLog.id());
+                sagaLogPool.releaseOwnership(owner, sagaLog.id());
             }
 
             send(exchange, statusCode, "application/json; charset=utf-8", responseBody);
