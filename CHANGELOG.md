@@ -48,6 +48,11 @@
 
 ### Fixed
 
+- **An exhausted PostgreSQL connection pool fails after one wait, with a clear message.** Opening a saga log when
+  every connection was held by an open log waited twice for HikariCP's connection timeout (60 s by default), because
+  the reconnect retry also ran when no connection could be had, and failed with a bare `RuntimeException`. It now
+  fails after one timeout; the message gives the pool size and says to raise `connection-pool.max-size`.
+
 - **An abort next to another failure is no longer lost.** If one node threw `AbortSagaException` while another failed
   with a different exception, the saga failed with the other exception and the abort disappeared; it is now attached
   as a suppressed exception. No rollback runs in that case, as before: the saga is left for forward recovery.

@@ -14,6 +14,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLTransientConnectionException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
@@ -126,6 +127,10 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
 
                     return result;
 
+                } catch (SQLTransientConnectionException e) {
+                    // no connection could be obtained (the pool is exhausted, or the database is unreachable):
+                    // a retry would only wait the same connection timeout again
+                    throw new RuntimeException(e.getMessage(), e);
                 } catch (SQLException e) {
                     if (i + 1 < N) {
                         reconnecting = true;
