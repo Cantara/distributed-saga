@@ -71,7 +71,9 @@ class PostgresSagaLogPool extends AbstractSagaLogPool {
 
     @Override
     protected SagaLog connectExternal(SagaLogId logId) throws SagaLogBusyException {
-        return connectedLocalLogBySagaLogId.computeIfAbsent(logId, id -> new PostgresSagaLog(dataSource, id, random, 0));
+        // a log closed by remove(logId) is opened again, not handed out closed
+        return connectedLocalLogBySagaLogId.compute(logId, (id, existing) ->
+                existing != null && !((PostgresSagaLog) existing).closed.get() ? existing : new PostgresSagaLog(dataSource, id, random, 0));
     }
 
     @Override

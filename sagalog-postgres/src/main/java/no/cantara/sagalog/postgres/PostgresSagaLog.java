@@ -50,12 +50,21 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
         this.sagaLogId = (PostgresSagaLogId) _sagaLogId;
         this.random = random;
         this.failOnXAttempts = failOnXAttempts;
-        this.lockKey = getOrAssignLockKey(sagaLogId);
-        boolean success = runTransaction((Function<Connection, Boolean>) connection -> tryLock(connection, lockKey));
-        if (!success) {
-            throw new SagaLogBusyException(String.format("Unable to acquire exclusive lock on %s with lock-key %d.", sagaLogId, lockKey));
+        boolean opened = false;
+        try {
+            this.lockKey = getOrAssignLockKey(sagaLogId);
+            boolean success = runTransaction((Function<Connection, Boolean>) connection -> tryLock(connection, lockKey));
+            if (!success) {
+                throw new SagaLogBusyException(String.format("Unable to acquire exclusive lock on %s with lock-key %d.", sagaLogId, lockKey));
+            }
+            initSagalogTable();
+            opened = true;
+        } finally {
+            if (!opened) {
+                closed.set(true);
+                releaseConnection(); // a log that could not be opened must not keep its connection
+            }
         }
-        initSagalogTable();
     }
 
     void runTransaction(Consumer<Connection> operation) {
@@ -76,6 +85,10 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
                 try {
 
                     if (theConnection == null) {
+                        if (closed.get()) {
+                            // e.g. an asynchronous write that runs after close(): never reopen without the lock
+                            throw new RuntimeException(String.format("Saga-log is already closed, saga-log-id: %s", sagaLogId));
+                        }
                         theConnection = dataSource.getConnection();
                     }
 
@@ -465,11 +478,39 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
         return new PostgresSagaLogEntryId(UuidV7.fromBytes(idBytes));
     }
 
+    /**
+     * Releases the advisory lock and gives the connection back to the data source. The unlock runs in a transaction
+     * that is committed, so the connection is not left idle in a transaction.
+     */
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            synchronized (sync) {
-                unlock(theConnection, lockKey);
+            releaseConnection();
+        }
+    }
+
+    private void releaseConnection() {
+        synchronized (sync) {
+            if (theConnection == null) {
+                return;
+            }
+            try {
+                if (lockIsHeld) {
+                    unlock(theConnection, lockKey);
+                }
+                if (!theConnection.getAutoCommit()) {
+                    theConnection.commit();
+                }
+            } catch (SQLException | RuntimeException e) {
+                LOG.warn(String.format("Unable to release the lock of sagalog '%s' cleanly; closing its connection", sagaLogId.getLogName()), e);
+            } finally {
+                try {
+                    theConnection.close(); // back to the pool; a session-level advisory lock ends with the session anyway
+                } catch (SQLException e) {
+                    LOG.warn(String.format("Unable to close the connection of sagalog '%s'", sagaLogId.getLogName()), e);
+                }
+                theConnection = null;
+                lockIsHeld = false;
             }
         }
     }
