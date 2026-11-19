@@ -78,6 +78,13 @@ public class SagaLogEntry {
         return sagaName;
     }
 
+    /**
+     * The entry's data: the saga input on the start entry, an action's serialized output on an End entry, or null.
+     * Despite the name it is any text the action's serializer produced, not necessarily JSON; every saga log
+     * stores and returns it unchanged.
+     *
+     * @return the data, or null
+     */
     public String getJsonData() {
         return jsonData;
     }

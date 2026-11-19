@@ -7,7 +7,6 @@ import no.cantara.sagalog.SagaLogEntryBuilder;
 import no.cantara.sagalog.SagaLogEntryId;
 import no.cantara.sagalog.SagaLogEntryType;
 import no.cantara.sagalog.SagaLogId;
-import org.postgresql.util.PGobject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,6 +15,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -289,7 +289,7 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
                 "    entry_type      smallint  NOT NULL,\n" +
                 "    node_id         varchar   NOT NULL,\n" +
                 "    saga_name       varchar   NULL,\n" +
-                "    data            json      NULL,\n" +
+                "    data            text      NULL,\n" +
                 "    PRIMARY KEY (entry_id, txid)\n" +
                 ")", sagaLogId.getSchema(), sagaLogId.getTableName());
         try (Statement statement = connection.createStatement()) {
@@ -330,10 +330,8 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
                         ps.setShort(3, PostgresSagaTools.toShort(entry.getEntryType()));
                         ps.setString(4, entry.getNodeId());
                         ps.setString(5, entry.getSagaName());
-                        PGobject jsonData = new PGobject();
-                        jsonData.setType("json");
-                        jsonData.setValue(entry.getJsonData());
-                        ps.setObject(6, jsonData);
+                        // untyped, so the server converts to the column's type: text, or json in tables made before 2.0.0
+                        ps.setObject(6, entry.getJsonData(), Types.OTHER);
                         ps.executeUpdate();
                     }
                 } catch (SQLException e) {

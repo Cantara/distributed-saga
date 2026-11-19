@@ -161,6 +161,41 @@ public class PostgresSagaLogTest {
         }
     }
 
+    @Test
+    public void thatDataNeedNotBeJson() {
+        String executionId = UUID.randomUUID().toString();
+        SagaLogEntry written = sagaLog.write(sagaLog.builder().endAction(executionId, "action1", "OK")).join();
+        SagaLogEntry read = sagaLog.readEntries(executionId).findFirst().orElseThrow();
+        assertEquals(read, written);
+        assertEquals(read.getJsonData(), "OK");
+    }
+
+    @Test
+    public void thatATableWithAJsonDataColumnFromBefore200StillWorks() throws SQLException {
+        PostgresSagaLogId oldLogId = new PostgresSagaLogId("sagalog", "internal-sagalog-integration-testing", "01", "the-old-saga-log");
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(true);
+            connection.createStatement().executeUpdate(String.format("DROP TABLE IF EXISTS \"%s\".\"%s\"", oldLogId.getSchema(), oldLogId.getTableName()));
+            connection.createStatement().executeUpdate(String.format("CREATE TABLE \"%s\".\"%s\" (\n" +
+                    "    entry_id        uuid      NOT NULL,\n" +
+                    "    txid            varchar   NOT NULL,\n" +
+                    "    entry_type      smallint  NOT NULL,\n" +
+                    "    node_id         varchar   NOT NULL,\n" +
+                    "    saga_name       varchar   NULL,\n" +
+                    "    data            json      NULL,\n" +
+                    "    PRIMARY KEY (entry_id, txid)\n" +
+                    ")", oldLogId.getSchema(), oldLogId.getTableName()));
+        }
+        PostgresSagaLog oldLog = new PostgresSagaLog(dataSource, oldLogId, new Random(), 1);
+        try {
+            Deque<SagaLogEntry> written = writeSuccessfulVanillaSagaExecutionEntries(oldLog, UUID.randomUUID().toString());
+            assertEquals(oldLog.readIncompleteSagas().collect(Collectors.toList()), List.copyOf(written));
+        } finally {
+            oldLog.truncate().join();
+            oldLog.close();
+        }
+    }
+
     private Deque<SagaLogEntry> writeSuccessfulVanillaSagaExecutionEntries(SagaLog sagaLog, String executionId) {
         Deque<SagaLogEntryBuilder> entryBuilders = new LinkedList<>();
         entryBuilders.add(sagaLog.builder().startSaga(executionId, "Vanilla-Saga", "{}"));
