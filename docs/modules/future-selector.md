@@ -43,7 +43,7 @@ while (selector.pending()) {
 ## Behaviour to know
 
 - A future is selectable when it completes, normally or exceptionally. Check the selected future
-  (`isCompletedExceptionally()`, or `get()`, which throws for a failed one). Before 2.0.1 a future that failed was never
+  (`isCompletedExceptionally()`, or `get()`, which throws for a failed one). Before 2.1.0 a future that failed was never
   selected, and `select()` waited for ever for it.
 - `select(timeout, unit)` returns null on timeout and selects nothing: `pending()` still counts the future.
 - Cancelling a `SelectableFuture` does not interrupt its running task.

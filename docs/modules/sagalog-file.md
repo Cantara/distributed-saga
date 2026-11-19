@@ -27,7 +27,7 @@ SagaLogPool pool = initializer.initialize(Map.of(
 - Each file is a queue file: a ring buffer with a small header, where a change takes effect only when the header is
   rewritten. Every write is synchronous; data is on disk when `write` returns. The implementation is a copy of Square's
   Tape `QueueFile` (2.0.0-beta1), in the package `no.cantara.sagalog.file.queue`; see [NOTICE](../../NOTICE). The queue
-  file format is Tape's, unchanged; the entry records inside it changed in 2.0.1 (below).
+  file format is Tape's, unchanged; the entry records inside it changed in 2.1.0 (below).
 - Each entry is one queue element in a binary record: a format-version byte (`2`), the id as a long, then execution
   id, entry type, node id, saga name and data, each as a length-prefixed UTF-8 string (length `-1` for null). Any
   text is stored as it is.
@@ -37,7 +37,7 @@ SagaLogPool pool = initializer.initialize(Map.of(
 
 ## Behaviour to know
 
-- **Logs written before 2.0.1 cannot be read.** Their entries were space-separated text that lost data not starting
+- **Logs written before 2.1.0 cannot be read.** Their entries were space-separated text that lost data not starting
   with `{`; opening such a log fails with `IllegalStateException` ("unsupported format"). Let their sagas finish with
   the old version, or delete the log file, before upgrading.
 - **One open log per file.** Opening a log takes an exclusive lock on `<log file>.lock` (an operating-system file

@@ -28,18 +28,18 @@ The libraries are published to Cantara's Maven repository, not to Maven Central:
     <dependency>
         <groupId>no.cantara.saga</groupId>
         <artifactId>saga-execution</artifactId>       <!-- brings saga-api, sagalog-api and future-selector -->
-        <version>2.0.0</version>
+        <version>2.1.0</version>
     </dependency>
     <dependency>
         <groupId>no.cantara.saga</groupId>
         <artifactId>sagalog-postgres</artifactId>     <!-- or sagalog-file; the memory log is in sagalog-api -->
-        <version>2.0.0</version>
+        <version>2.1.0</version>
     </dependency>
 </dependencies>
 ```
 
-The latest release is 2.0.0 (Java 17). If you are upgrading from 1.0.x, the [CHANGELOG](CHANGELOG.md) lists what
-changed and how to migrate.
+The latest release is 2.1.0 (Java 17). If you are upgrading from 2.0.0 or 1.0.x, the [CHANGELOG](CHANGELOG.md) lists
+what changed and how to migrate; 2.1.0 has breaking changes.
 
 | Artifact | What it is |
 |---|---|
