@@ -80,8 +80,9 @@ public class SagaLogEntry {
 
     /**
      * The entry's data: the saga input on the start entry, an action's serialized output on an End entry, or null.
-     * Despite the name it is any text the action's serializer produced, not necessarily JSON; every saga log
-     * stores and returns it unchanged.
+     * Despite the name it is any text the action's serializer produced, not necessarily JSON. The memory and the
+     * PostgreSQL saga logs store and return it unchanged. The file saga log keeps it only when it starts with
+     * {@code '{'} (a JSON object); other data is returned as null.
      *
      * @return the data, or null
      */

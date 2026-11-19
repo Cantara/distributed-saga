@@ -39,7 +39,8 @@ unchanged; only the version changes from 1.0.x to 2.0.0.
 - **`sagalog-postgres`: the `data` column is `text`, not `json`.** An entry's data (`SagaLogEntry.getJsonData()`)
   is whatever the action's serializer produced, which need not be JSON: the default
   `ActionOutputSerializerToStringAndStringConstructor` writes an `Adapter<String>`'s output as bare text. The memory
-  and file logs always stored it as it was; the PostgreSQL log refused it. New tables get a `text` column, and
+  log always stored it as it was; the PostgreSQL log refused it. (The file log, unchanged, still keeps data only when
+  it starts with `{`; see `docs/modules/sagalog-file.md`.) New tables get a `text` column, and
   data is written untyped, so tables created before 2.0.0 keep working for JSON data. To store non-JSON data in such a
   table, migrate it once per saga-log table:
   `ALTER TABLE "<schema>"."<table>" ALTER COLUMN data TYPE text;` (lossless).
