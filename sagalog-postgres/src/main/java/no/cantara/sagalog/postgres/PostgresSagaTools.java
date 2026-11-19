@@ -2,43 +2,31 @@ package no.cantara.sagalog.postgres;
 
 import no.cantara.sagalog.SagaLogEntryType;
 
-public class PostgresSagaTools {
+final class PostgresSagaTools {
+
+    private PostgresSagaTools() {
+    }
 
     static SagaLogEntryType fromShort(short value) {
-        switch (value) {
-            case 1:
-                return SagaLogEntryType.Start;
-            case 2:
-                return SagaLogEntryType.End;
-            case 3:
-                return SagaLogEntryType.Abort;
-            case 4:
-                return SagaLogEntryType.Comp;
-            case 5:
-                return SagaLogEntryType.Ignore;
-            case 6:
-                return SagaLogEntryType.CompStart;
-            default:
-                throw new IllegalArgumentException("Illegal SagaLogEntryType short-value: " + value);
-        }
+        return switch (value) {
+            case 1 -> SagaLogEntryType.Start;
+            case 2 -> SagaLogEntryType.End;
+            case 3 -> SagaLogEntryType.Abort;
+            case 4 -> SagaLogEntryType.Comp;
+            case 5 -> SagaLogEntryType.Ignore;
+            case 6 -> SagaLogEntryType.CompStart;
+            default -> throw new IllegalArgumentException("Illegal SagaLogEntryType short-value: " + value);
+        };
     }
 
     static short toShort(SagaLogEntryType type) {
-        switch (type) {
-            case Start:
-                return 1;
-            case End:
-                return 2;
-            case Abort:
-                return 3;
-            case Comp:
-                return 4;
-            case Ignore:
-                return 5;
-            case CompStart:
-                return 6;
-            default:
-                throw new IllegalStateException("Unsupported enum value: " + type);
-        }
+        return switch (type) {
+            case Start -> 1;
+            case End -> 2;
+            case Abort -> 3;
+            case Comp -> 4;
+            case Ignore -> 5;
+            case CompStart -> 6;
+        };
     }
 }

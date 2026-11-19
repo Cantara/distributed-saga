@@ -4,7 +4,6 @@ import no.cantara.sagalog.SagaLogInitializer;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.Map;
 
 public class EmbeddedPostgresSagaLogInitializer implements SagaLogInitializer {
@@ -45,22 +44,10 @@ public class EmbeddedPostgresSagaLogInitializer implements SagaLogInitializer {
     }
 
     static void createSchemaIfNotExists(Connection connection, String schema, String username) throws SQLException {
-        try (Statement st = connection.createStatement()) {
-            String sql = String.format("CREATE SCHEMA IF NOT EXISTS \"%s\" AUTHORIZATION \"%s\"", schema, username);
-            st.executeUpdate(sql);
-        }
+        PostgresSagaLogInitializer.createSchemaIfNotExists(connection, schema, username);
     }
 
     static void createLocksTableIfNotExists(Connection connection, String schema) throws SQLException {
-        try (Statement st = connection.createStatement()) {
-            String sql = String.format("CREATE TABLE IF NOT EXISTS \"%s\".\"Locks\" (\n" +
-                    "    namespace       varchar NOT NULL,\n" +
-                    "    instance_id     varchar NOT NULL,\n" +
-                    "    log_id          varchar NOT NULL,\n" +
-                    "    lock_key        bigint  NOT NULL,\n" +
-                    "    PRIMARY KEY (namespace, instance_id, log_id)\n" +
-                    ")", schema);
-            st.executeUpdate(sql);
-        }
+        PostgresSagaLogInitializer.createLocksTableIfNotExists(connection, schema);
     }
 }

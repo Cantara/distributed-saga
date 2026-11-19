@@ -55,7 +55,11 @@ public class EmbeddedPostgresDataSource implements PostgresDataSource {
 
     @Override
     public void evictConnection(Connection connection) {
-        // do nothing
+        try {
+            connection.close(); // a plain connection, not pooled: closing it ends its session
+        } catch (SQLException ignored) {
+            // already gone
+        }
     }
 
     @Override
