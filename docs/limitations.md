@@ -51,8 +51,8 @@ thread and its saga. Put timeouts inside your actions.
 
 - **File log**: keeps entry data only when it starts with `{`, has no escaping for spaces, restarts entry ids at 0
   after a restart, and has no lock between processes. See [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
-- **PostgreSQL log**: never gives a log's connection back to the pool, and returns a closed log when a removed log is
-  opened again. See [sagalog-postgres](modules/sagalog-postgres.md#behaviour-to-know).
+- **PostgreSQL log**: each open log holds a connection, so the connection pool must be larger than the number of logs
+  open at once; `delete(logId)` does not drop the log's table. See [sagalog-postgres](modules/sagalog-postgres.md#connections).
 - **Ownership in the pool**: `releaseOwnership(logId)` and `release(logId)` take no owner, so any caller can release
   any log; release only logs you hold.
 

@@ -61,7 +61,10 @@ Closing the log unlocks it. So a log is written by one process at a time, cluste
 ## Connections
 
 - Each open log holds one connection from the HikariCP pool for as long as it is open, because the advisory lock
-  belongs to that connection.
+  belongs to that connection. `close()` (also called by `remove(logId)` and `shutdown()`) releases the lock, commits,
+  and gives the connection back. Set `connection-pool.max-size` above the number of logs open at the same time
+  (instance-local logs plus the logs of other instances being recovered); when the pool is used up, opening or writing
+  waits for HikariCP's connection timeout and fails.
 - Every operation runs in a transaction on that connection. On an `SQLException` the log gets a new connection,
   takes the lock again, and retries the operation once.
 - `write` and `truncate` run on the common fork-join pool (`CompletableFuture.supplyAsync`/`runAsync`); the returned
@@ -69,12 +72,8 @@ Closing the log unlocks it. So a log is written by one process at a time, cluste
 
 ## Behaviour to know
 
-- **A log's connection is never given back to the HikariCP pool**, not even when the log is closed: `close()`
-  releases the advisory lock but keeps the connection. Every log that is opened in the life of a saga-log pool uses
-  one connection, so set `connection-pool.max-size` above the number of distinct logs you will open (instance-local
-  logs plus the logs of other instances you recover), or the pool runs out.
-- After `remove(logId)`, opening the same log id again in the same pool returns the closed log, which fails on use.
-  Only `delete(logId)` forgets it. Keep logs open for the life of the pool, or call `delete` after `remove`.
+- Before 2.0.1 a log never gave its connection back, and `close()` left it idle in a transaction; opening a log again
+  after `remove(logId)` returned the closed log. Both are fixed in 2.0.1.
 - `delete(logId)` only closes the log and forgets it; it does not drop its table.
 - Names are put into SQL without quoting checks: use plain names for `cluster.owner`, `cluster.name`,
   `cluster.instance-id` and log names. PostgreSQL truncates identifiers longer than 63 bytes, so keep table names
