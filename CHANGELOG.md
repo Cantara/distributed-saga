@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **PostgreSQL saga log, module descriptor:** the module no longer `opens` its package (nothing reflects on it), and
+  `PostgresSagaLogInitializer.initialize` is declared to return `SagaLogPool` instead of the package-private
+  `PostgresSagaLogPool`, which no caller outside the package could name. Code that uses the initializer through
+  `SagaLogInitializer` or `ServiceLoader` is unchanged. javac's only remaining module warning is `requires-automatic`
+  for the PostgreSQL JDBC driver, which ships an `Automatic-Module-Name` and no `module-info`.
+
 ## 2.1.1 (2026-11-20)
 
 Fixes and changes from the module design review of 2026-11-19. Each entry names its finding id.

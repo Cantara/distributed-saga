@@ -3,6 +3,7 @@ package no.cantara.sagalog.postgres;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import no.cantara.sagalog.SagaLogInitializer;
+import no.cantara.sagalog.SagaLogPool;
 import org.postgresql.ds.PGSimpleDataSource;
 
 import java.sql.Connection;
@@ -34,7 +35,14 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
      * @throws PostgresSagaLogException if the schema or the Locks table cannot be made
      */
     @Override
-    public PostgresSagaLogPool initialize(Map<String, String> configuration) {
+    public SagaLogPool initialize(Map<String, String> configuration) {
+        return initializePool(configuration);
+    }
+
+    /**
+     * {@link #initialize(Map)} with the concrete type, for this package (the type is not part of the API).
+     */
+    PostgresSagaLogPool initializePool(Map<String, String> configuration) {
         String clusterOwner = configuration.get("cluster.owner");
         String namespace = configuration.get("cluster.name");
         String instanceId = configuration.get("cluster.instance-id");

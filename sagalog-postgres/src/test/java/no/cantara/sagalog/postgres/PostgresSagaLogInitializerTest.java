@@ -66,7 +66,7 @@ public class PostgresSagaLogInitializerTest {
 
     @Test
     public void thatTheDefaultsAreTheDriversOwn() throws Exception {
-        PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initialize(configuration());
+        PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initializePool(configuration());
         try (Connection connection = pool.dataSource.getConnection()) {
             assertEquals(show(connection, "statement_timeout"), "0");
             assertEquals(show(connection, "lock_timeout"), "0");
@@ -78,7 +78,7 @@ public class PostgresSagaLogInitializerTest {
 
     @Test
     public void thatTheTimeoutsCanBeConfigured() throws Exception {
-        PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initialize(configuration(
+        PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initializePool(configuration(
                 "postgres.statement-timeout", "2500",
                 "postgres.lock-timeout", "1000",
                 "postgres.driver.socket-timeout", "90000",
@@ -99,7 +99,7 @@ public class PostgresSagaLogInitializerTest {
      */
     @Test
     public void thatAWriteWaitingOnALockFailsWithinTheTimeout() throws Exception {
-        PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initialize(configuration(
+        PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initializePool(configuration(
                 "postgres.lock-timeout", "500",
                 "postgres.statement-timeout", "1000"));
         Connection blocker = admin();
@@ -140,9 +140,9 @@ public class PostgresSagaLogInitializerTest {
      */
     @Test
     public void thatTheTlsModeReachesTheDriver() {
-        expectThrows(RuntimeException.class, () -> new PostgresSagaLogInitializer().initialize(configuration(
+        expectThrows(RuntimeException.class, () -> new PostgresSagaLogInitializer().initializePool(configuration(
                 "postgres.driver.sslmode", "require")).shutdown());
-        new PostgresSagaLogInitializer().initialize(configuration("postgres.driver.sslmode", "disable")).shutdown();
+        new PostgresSagaLogInitializer().initializePool(configuration("postgres.driver.sslmode", "disable")).shutdown();
     }
 
     /**
@@ -150,7 +150,7 @@ public class PostgresSagaLogInitializerTest {
      */
     @Test
     public void thatOtherDriverPropertiesPassThrough() throws Exception {
-        PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initialize(configuration(
+        PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initializePool(configuration(
                 "postgres.driver.property.ApplicationName", "saga-log-test"));
         try (Connection connection = pool.dataSource.getConnection()) {
             assertEquals(show(connection, "application_name"), "saga-log-test");
@@ -173,7 +173,7 @@ public class PostgresSagaLogInitializerTest {
                 + " entry_type smallint NOT NULL, node_id varchar NOT NULL, saga_name varchar NULL, data text NULL,"
                 + " PRIMARY KEY (entry_id, txid))");
         for (int i = 0; i < 2; i++) { // the migration runs again without harm
-            PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initialize(configuration());
+            PostgresSagaLogPool pool = new PostgresSagaLogInitializer().initializePool(configuration());
             try {
                 SagaLog log = pool.connect(pool.idFor("01", "old"));
                 log.write(log.builder().startSaga("e" + i, "s", "{}")).join();
