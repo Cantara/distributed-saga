@@ -28,17 +28,17 @@ The libraries are published to Cantara's Maven repository, not to Maven Central:
     <dependency>
         <groupId>no.cantara.saga</groupId>
         <artifactId>saga-execution</artifactId>       <!-- brings saga-api, sagalog-api and future-selector -->
-        <version>2.1.2</version>
+        <version>2.1.3</version>
     </dependency>
     <dependency>
         <groupId>no.cantara.saga</groupId>
         <artifactId>sagalog-postgres</artifactId>     <!-- or sagalog-file; the memory log is in sagalog-api -->
-        <version>2.1.2</version>
+        <version>2.1.3</version>
     </dependency>
 </dependencies>
 ```
 
-The latest release is 2.1.2 (Java 17; the library modules can be linked with jlink). If you are upgrading from 2.1.0,
+The latest release is 2.1.3 (Java 17; the library modules can be linked with jlink). If you are upgrading from 2.1.0,
 2.0.0 or 1.0.x, the [CHANGELOG](CHANGELOG.md) lists what changed and how to migrate; 2.1.0 and 2.1.1 have breaking
 changes. Upgrade every instance of an application together: 2.1.1 and later must not run side by side with 2.1.0.
 
