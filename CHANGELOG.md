@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.2 (2026-11-20)
 
 ### Added
 - **jlink support.** All library modules link into a custom runtime image. `sagalog-postgres` no longer requires the
