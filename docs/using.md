@@ -225,8 +225,8 @@ cut off between two steps and nothing calls the saga-log pool after it has close
    that you choose.
 3. **Shut down the thread pool you created.** `shutdown()` lets walks that are already queued run. A walk that a step
    submits after this is rejected: that saga fails through its futures with `RejectedExecutionException`, and
-   `onComplete` is called once with a failure. Its log keeps the entries written so far, so recovery finishes the saga
-   after a restart. If you use `shutdownNow()`, cancel the tasks it returns, so that a saga whose walks were all
+   `onComplete` is called once with a failure. The entries written so far stay in the log unless `onComplete`
+   truncates it; keep them when the result is a failure if recovery should finish the saga after a restart. If you use `shutdownNow()`, cancel the tasks it returns, so that a saga whose walks were all
    queued completes its futures:
 
    ```java
