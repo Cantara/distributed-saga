@@ -110,7 +110,10 @@ Fixes and changes from the module design review of 2026-11-19. Each entry names 
   futures and `onComplete` were never completed. Now `executeSaga` returns, `onComplete` is called once with a failure
   result, and the handoff and completion futures fail with the `RejectedExecutionException`. **Migration:** handle a
   rejection where you handle the saga's other failures, on the completion future (or the handoff future); a
-  `try`/`catch` around `executeSaga` no longer sees it.
+  `try`/`catch` around `executeSaga` no longer sees it. **Resources held for the saga** (its saga log, a semaphore
+  permit that limits concurrent sagas) must be released in `onComplete` or on the completion future, which see every
+  outcome, rejection included. A caller that released them only in a `catch` around `executeSaga` now leaks them
+  whenever the executor rejects a walk.
 - **`executeSaga` checks its arguments** (se-14): a null `executionId`, `preAction` or `postAction` throws
   `NullPointerException` at once. Before, a null callback failed the saga inside its first walk. **Migration:** pass
   non-null callbacks (the four-argument `executeSaga` passes no-op ones).
