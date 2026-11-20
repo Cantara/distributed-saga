@@ -10,7 +10,6 @@ import no.cantara.sagalog.SagaLogInitializer;
 import no.cantara.sagalog.SagaLogPool;
 import org.testng.annotations.Test;
 
-import java.util.ServiceLoader;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -49,9 +48,7 @@ public class SagaExecutionOnCompleteTest {
             .end();
 
     private SagaLog newSagaLog() {
-        SagaLogInitializer initializer = ServiceLoader.load(SagaLogInitializer.class).stream()
-                .filter(c -> "no.cantara.sagalog.memory.MemorySagaLogInitializer".equals(c.type().getName()))
-                .findFirst().orElseThrow().get();
+        SagaLogInitializer initializer = MemoryLogs.memoryInitializer();
         SagaLogPool pool = initializer.initialize(initializer.configurationOptionsAndDefaults());
         return pool.connect(pool.idFor(pool.getLocalClusterInstanceId(), "on-complete-" + UUID.randomUUID()));
     }

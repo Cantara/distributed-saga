@@ -14,7 +14,6 @@ import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -81,9 +80,7 @@ public class SagaExecutionAbortNextToSiblingTest {
     }
 
     private SagaLog newSagaLog() {
-        SagaLogInitializer initializer = ServiceLoader.load(SagaLogInitializer.class).stream()
-                .filter(c -> "no.cantara.sagalog.memory.MemorySagaLogInitializer".equals(c.type().getName()))
-                .findFirst().orElseThrow().get();
+        SagaLogInitializer initializer = MemoryLogs.memoryInitializer();
         SagaLogPool logPool = initializer.initialize(initializer.configurationOptionsAndDefaults());
         return logPool.connect(logPool.idFor(logPool.getLocalClusterInstanceId(), "abort-" + UUID.randomUUID()));
     }

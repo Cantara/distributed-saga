@@ -47,6 +47,7 @@ public class FutureSelector<F, C> {
         try {
             selected = doneQueue.take();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // launder restores it too; restored here where it is caught
             throw launder(e);
         }
         taskCount.decrementAndGet(); // always decrement taskCount only after taking the task off the queue.
@@ -73,6 +74,7 @@ public class FutureSelector<F, C> {
         try {
             selected = doneQueue.poll(timeout, unit);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // launder restores it too; restored here where it is caught
             throw launder(e);
         }
         if (selected != null) {

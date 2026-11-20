@@ -72,6 +72,9 @@ class PostgresSagaLog implements SagaLog, AutoCloseable {
         session.open(this::createTableAndIndexIfNotExist);
     }
 
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     private Void createTableAndIndexIfNotExist(Connection connection) throws SQLException {
         String table = sagaLogId.qualifiedTableName();
         try (Statement statement = connection.createStatement()) {

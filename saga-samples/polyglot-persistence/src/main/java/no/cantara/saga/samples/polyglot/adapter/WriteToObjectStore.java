@@ -9,10 +9,10 @@ import java.util.UUID;
 
 public class WriteToObjectStore extends Adapter<JSONObject> {
 
-    public static final String NAME = "ObjectStore";
+    public static final String ADAPTER_NAME = "ObjectStore";
 
     public WriteToObjectStore(Class<JSONObject> outputClazz) {
-        super(outputClazz, NAME);
+        super(outputClazz, ADAPTER_NAME);
     }
 
     @Override

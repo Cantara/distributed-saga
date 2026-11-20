@@ -21,7 +21,7 @@ class PostgresSagaLogId implements SagaLogId, Comparable<PostgresSagaLogId> {
     /** PostgreSQL's identifier limit (NAMEDATALEN - 1), in bytes. */
     static final int MAX_IDENTIFIER_BYTES = 63;
 
-    static final Pattern SCHEMA = Pattern.compile("[A-Za-z0-9_-]+");
+    static final Pattern SCHEMA_PATTERN = Pattern.compile("[A-Za-z0-9_-]+");
     static final Pattern NAMESPACE_OR_INSTANCE_ID = Pattern.compile("[A-Za-z0-9-]+");
     static final Pattern LOG_NAME = Pattern.compile("[A-Za-z0-9_.:$-]+");
 
@@ -43,7 +43,7 @@ class PostgresSagaLogId implements SagaLogId, Comparable<PostgresSagaLogId> {
      *                                  table name is longer than 63 bytes
      */
     PostgresSagaLogId(String schema, String namespace, String clusterInstanceId, String logName) {
-        this.schema = check("schema (cluster.owner)", schema, SCHEMA);
+        this.schema = check("schema (cluster.owner)", schema, SCHEMA_PATTERN);
         this.namespace = check("namespace (cluster.name)", namespace, NAMESPACE_OR_INSTANCE_ID);
         this.clusterInstanceId = check("clusterInstanceId (cluster.instance-id)", clusterInstanceId, NAMESPACE_OR_INSTANCE_ID);
         this.logName = check("logName", logName, LOG_NAME);
@@ -61,7 +61,7 @@ class PostgresSagaLogId implements SagaLogId, Comparable<PostgresSagaLogId> {
         if (!m.matches()) {
             throw new IllegalArgumentException("table-name does not match sagalog pattern: " + tableName);
         }
-        this.schema = check("schema (cluster.owner)", schema, SCHEMA);
+        this.schema = check("schema (cluster.owner)", schema, SCHEMA_PATTERN);
         this.namespace = check("namespace (cluster.name)", m.group("namespace"), NAMESPACE_OR_INSTANCE_ID);
         this.clusterInstanceId = check("clusterInstanceId (cluster.instance-id)", m.group("instanceId"), NAMESPACE_OR_INSTANCE_ID);
         this.logName = check("logName", m.group("logName"), LOG_NAME);

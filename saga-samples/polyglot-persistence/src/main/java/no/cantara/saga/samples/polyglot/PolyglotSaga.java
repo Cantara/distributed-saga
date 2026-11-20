@@ -20,10 +20,10 @@ final class PolyglotSaga {
      */
     static final Saga SAGA = Saga.start(NAME)
             .linkTo("rdbms", "graph", "objectstore")
-            .id("rdbms").adapter(WriteToRDBMS.NAME).linkTo("pubsub")
-            .id("graph").adapter(WriteToGraph.NAME).linkTo("pubsub")
-            .id("objectstore").adapter(WriteToObjectStore.NAME).linkTo("pubsub")
-            .id("pubsub").adapter(PublishToPubSub.NAME).linkToEnd()
+            .id("rdbms").adapter(WriteToRDBMS.ADAPTER_NAME).linkTo("pubsub")
+            .id("graph").adapter(WriteToGraph.ADAPTER_NAME).linkTo("pubsub")
+            .id("objectstore").adapter(WriteToObjectStore.ADAPTER_NAME).linkTo("pubsub")
+            .id("pubsub").adapter(PublishToPubSub.ADAPTER_NAME).linkToEnd()
             .end();
 
     /**

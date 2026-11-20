@@ -9,10 +9,10 @@ import java.util.UUID;
 
 public class WriteToGraph extends Adapter<JSONObject> {
 
-    public static final String NAME = "Graph";
+    public static final String ADAPTER_NAME = "Graph";
 
     public WriteToGraph(Class<JSONObject> outputClazz) {
-        super(outputClazz, NAME);
+        super(outputClazz, ADAPTER_NAME);
     }
 
     @Override
