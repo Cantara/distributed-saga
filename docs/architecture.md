@@ -48,7 +48,7 @@ Every library module is a named Java module with a `module-info.java`.
 | `no.cantara.saga.execution` | `no.cantara.saga.execution`, `...execution.adapter` | `transitive` saga-api, sagalog, futureselector | uses `SagaLogInitializer` |
 | `no.cantara.saga.serialization` | `no.cantara.saga.serialization` | `transitive` saga-api; `org.json` | |
 | `no.cantara.sagalog.file` | nothing | `no.cantara.sagalog` | provides `SagaLogInitializer` (file log) |
-| `no.cantara.sagalog.postgres` | `no.cantara.sagalog.postgres` (the initializer and `PostgresSagaLogException`) | `transitive` sagalog; `java.sql`, `com.zaxxer.hikari`, `org.postgresql.jdbc`, `org.slf4j` | provides `SagaLogInitializer` (PostgreSQL log) |
+| `no.cantara.sagalog.postgres` | `no.cantara.sagalog.postgres` (the initializer and `PostgresSagaLogException`) | `transitive` sagalog; `java.sql`, `com.zaxxer.hikari`, `org.slf4j` | provides `SagaLogInitializer` (PostgreSQL log) |
 
 Notes:
 
@@ -56,10 +56,28 @@ Notes:
   `SelectableFuture` without requiring their modules itself.
 - The provider modules export nothing an application needs to call: it reaches them through `ServiceLoader` and the
   `SagaLogInitializer` interface (see below). `sagalog-postgres` exports its package only so that
-  `PostgresSagaLogException` can be caught by type. Their packages are `opens`, for reflection.
-- `org.postgresql.jdbc` is an automatic module: the PostgreSQL driver has no module descriptor, but it declares that
-  name in its manifest. Every other dependency is a named module.
+  `PostgresSagaLogException` can be caught by type. No package is `opens`: nothing reflects on them.
+- Every module a library module requires is an explicit module with its own descriptor, so the libraries can be
+  linked into a custom runtime with jlink (below).
+- The PostgreSQL JDBC driver is not required by `no.cantara.sagalog.postgres`. It is an automatic module (no
+  descriptor, only an `Automatic-Module-Name`), which jlink rejects, so the module finds the driver at run time by
+  class name. The application provides it; Maven brings it in as a runtime dependency of `sagalog-postgres`.
 - The libraries also work on the class path.
+
+### jlink
+
+All seven library modules, with HikariCP, SLF4J and org.json, link into a custom runtime image. Put the PostgreSQL
+JDBC driver on the class path of that runtime, because jlink cannot include an automatic module:
+
+```shell
+jlink --module-path $JAVA_HOME/jmods:<library jars>:<HikariCP>:<slf4j-api>:<your app> \
+      --add-modules <your app module> --output image
+image/bin/java -cp postgresql-42.7.x.jar -m <your app module>/<main class>
+```
+
+The driver is found through the class path from inside the image. Without the driver, opening a PostgreSQL saga-log
+pool fails with `IllegalStateException` saying that the driver is not on the class path or the module path.
+`PostgresSagaLogModuleGraphTest` fails the build if a module in `sagalog-postgres`'s graph is automatic.
 
 ## Saga-log providers and service loading
 

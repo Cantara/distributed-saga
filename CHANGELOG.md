@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+- **jlink support.** All library modules link into a custom runtime image. `sagalog-postgres` no longer requires the
+  PostgreSQL JDBC driver's module (`org.postgresql.jdbc`, an automatic module, which jlink rejects): it creates the
+  driver's `PGSimpleDataSource` by class name, once per pool, with the same settings as before. The application
+  provides the driver, on the class path (as it must be with jlink) or the module path; Maven still brings it in, now
+  as a runtime dependency. Without the driver, `initialize` fails with `IllegalStateException` that names it. A test
+  fails the build if an automatic module enters the module's graph. See "jlink" in `docs/architecture.md`.
+
 ### Changed
 - **PostgreSQL saga log, module descriptor:** the module no longer `opens` its package (nothing reflects on it), and
   `PostgresSagaLogInitializer.initialize` is declared to return `SagaLogPool` instead of the package-private

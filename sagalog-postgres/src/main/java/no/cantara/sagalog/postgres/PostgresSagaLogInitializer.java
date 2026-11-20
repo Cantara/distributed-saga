@@ -4,8 +4,9 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import no.cantara.sagalog.SagaLogInitializer;
 import no.cantara.sagalog.SagaLogPool;
-import org.postgresql.ds.PGSimpleDataSource;
 
+import javax.sql.DataSource;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -104,25 +105,29 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
      * the socket timeout and TCP keepalive; {@code statement_timeout} and {@code lock_timeout} for every session; and
      * any {@code postgres.driver.property.<name>} as it is. A setting the application leaves out keeps the driver's or
      * the server's default: no timeouts, no keepalive, {@code sslmode=prefer}.
+     * <p>
+     * The PostgreSQL JDBC driver is found at run time, by class name, so that this module does not require it: the
+     * driver jar is an automatic module, which jlink rejects. The application provides the driver, on the class path or
+     * the module path. Reflection is used once per pool, when it is created.
      */
-    static PGSimpleDataSource createPostgresDataSource(Map<String, String> configuration) {
-        PGSimpleDataSource dataSource = new PGSimpleDataSource();
-        dataSource.setServerNames(new String[]{configuration.getOrDefault("postgres.driver.host", "localhost")});
-        dataSource.setPortNumbers(new int[]{intValue(configuration, "postgres.driver.port", "5432")});
-        dataSource.setUser(configuration.get("postgres.driver.user"));
-        dataSource.setPassword(configuration.get("postgres.driver.password"));
-        dataSource.setDatabaseName(configuration.get("postgres.driver.database"));
+    static DataSource createPostgresDataSource(Map<String, String> configuration) {
+        PgDataSource dataSource = PgDataSource.create();
+        dataSource.call("setServerNames", String[].class, new String[]{configuration.getOrDefault("postgres.driver.host", "localhost")});
+        dataSource.call("setPortNumbers", int[].class, new int[]{intValue(configuration, "postgres.driver.port", "5432")});
+        dataSource.call("setUser", String.class, configuration.get("postgres.driver.user"));
+        dataSource.call("setPassword", String.class, configuration.get("postgres.driver.password"));
+        dataSource.call("setDatabaseName", String.class, configuration.get("postgres.driver.database"));
         String sslmode = configuration.get("postgres.driver.sslmode");
         if (sslmode != null) {
-            dataSource.setSslMode(sslmode);
+            dataSource.call("setSslMode", String.class, sslmode);
         }
         String sslrootcert = configuration.get("postgres.driver.sslrootcert");
         if (sslrootcert != null) {
-            dataSource.setSslRootCert(sslrootcert);
+            dataSource.call("setSslRootCert", String.class, sslrootcert);
         }
         int socketTimeoutMs = intValue(configuration, "postgres.driver.socket-timeout", DEFAULT_SOCKET_TIMEOUT_MS);
-        dataSource.setSocketTimeout((socketTimeoutMs + 999) / 1000); // the driver counts in seconds; 0 is none
-        dataSource.setTcpKeepAlive(Boolean.parseBoolean(configuration.getOrDefault("postgres.driver.tcp-keep-alive", DEFAULT_TCP_KEEP_ALIVE)));
+        dataSource.call("setSocketTimeout", int.class, (socketTimeoutMs + 999) / 1000); // the driver counts in seconds; 0 is none
+        dataSource.call("setTcpKeepAlive", boolean.class, Boolean.parseBoolean(configuration.getOrDefault("postgres.driver.tcp-keep-alive", DEFAULT_TCP_KEEP_ALIVE)));
         int statementTimeoutMs = intValue(configuration, "postgres.statement-timeout", DEFAULT_STATEMENT_TIMEOUT_MS);
         int lockTimeoutMs = intValue(configuration, "postgres.lock-timeout", DEFAULT_LOCK_TIMEOUT_MS);
         StringBuilder sessionOptions = new StringBuilder();
@@ -143,11 +148,87 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
             }
         }
         if (sessionOptions.length() > 0) {
-            String userOptions = dataSource.getOptions();
+            String userOptions = (String) dataSource.call("getOptions", null, null);
             // options given as a driver property come last, so a -c setting there wins over the timeouts here
-            dataSource.setOptions(userOptions == null || userOptions.isBlank() ? sessionOptions.toString() : sessionOptions + " " + userOptions);
+            dataSource.call("setOptions", String.class, userOptions == null || userOptions.isBlank() ? sessionOptions.toString() : sessionOptions + " " + userOptions);
         }
-        return dataSource;
+        return dataSource.dataSource;
+    }
+
+    /**
+     * The driver's {@code PGSimpleDataSource}, configured through its public setters, looked up by name.
+     */
+    private static final class PgDataSource {
+        static final String CLASS_NAME = "org.postgresql.ds.PGSimpleDataSource";
+
+        final DataSource dataSource;
+
+        private PgDataSource(DataSource dataSource) {
+            this.dataSource = dataSource;
+        }
+
+        static PgDataSource create() {
+            Class<?> type;
+            try {
+                ClassLoader loader = Thread.currentThread().getContextClassLoader();
+                type = Class.forName(CLASS_NAME, true, loader != null ? loader : PostgresSagaLogInitializer.class.getClassLoader());
+            } catch (ClassNotFoundException e) {
+                try {
+                    type = Class.forName(CLASS_NAME, true, PostgresSagaLogInitializer.class.getClassLoader());
+                } catch (ClassNotFoundException again) {
+                    e.addSuppressed(again);
+                    throw new IllegalStateException("The PostgreSQL JDBC driver (org.postgresql:postgresql) is not on the "
+                            + "class path or the module path: " + CLASS_NAME + " was not found", e);
+                }
+            }
+            try {
+                return new PgDataSource((DataSource) type.getConstructor().newInstance());
+            } catch (ReflectiveOperationException | ClassCastException e) {
+                throw new IllegalStateException("Cannot create the PostgreSQL JDBC driver's " + CLASS_NAME, e);
+            }
+        }
+
+        /**
+         * Calls a public method with one argument, or none when {@code parameterType} is null.
+         */
+        Object call(String method, Class<?> parameterType, Object argument) {
+            try {
+                return parameterType == null
+                        ? dataSource.getClass().getMethod(method).invoke(dataSource)
+                        : dataSource.getClass().getMethod(method, parameterType).invoke(dataSource, argument);
+            } catch (InvocationTargetException e) {
+                throw unchecked(e.getCause());
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("The PostgreSQL JDBC driver's " + CLASS_NAME + " has no " + method
+                        + ": use a driver of version 42.7 or later", e);
+            }
+        }
+
+        /**
+         * The driver's own failure, as it is: unchecked passes through, an {@code Error} is rethrown.
+         */
+        private static RuntimeException unchecked(Throwable t) {
+            if (t instanceof RuntimeException e) {
+                return e;
+            }
+            if (t instanceof Error e) {
+                throw e;
+            }
+            return new IllegalStateException("The PostgreSQL JDBC driver's " + CLASS_NAME + " failed", t);
+        }
+
+        void setProperty(String name, String value) throws SQLException {
+            try {
+                dataSource.getClass().getMethod("setProperty", String.class, String.class).invoke(dataSource, name, value);
+            } catch (InvocationTargetException e) {
+                if (e.getCause() instanceof SQLException sql) {
+                    throw sql;
+                }
+                throw unchecked(e.getCause());
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("The PostgreSQL JDBC driver's " + CLASS_NAME + " has no setProperty", e);
+            }
+        }
     }
 
     private static int intValue(Map<String, String> configuration, String key, String defaultValue) {
