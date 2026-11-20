@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -60,20 +61,44 @@ public class SagaExecutionAbortNextToSiblingTest {
         }
     }
 
-    private AdapterLoader adapters(long persistenceDelayMs, long searchDelayMs) {
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("search never got there");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted", e);
+        }
+    }
+
+    /**
+     * The walk hands persistence to the pool and goes on to search on its own thread, so either can run first. To
+     * test a sibling that is running or has finished, persistence aborts only once search has started, or once it
+     * has returned; otherwise the abort can come before search starts, and the saga then rightly never starts it.
+     *
+     * @param searchStillRunning true: search is still running during the abort; false: it has returned before it
+     */
+    private AdapterLoader adapters(boolean searchStillRunning) {
+        CountDownLatch searchStarted = new CountDownLatch(1);
+        CountDownLatch searchReturned = new CountDownLatch(1);
         return new AdapterLoader()
                 .register(new Adapter<>(String.class, "txlog",
                         (input, dependees) -> "txlog-out",
                         (input, output) -> compensated.add("txlog:" + output)))
                 .register(new Adapter<>(String.class, "persistence",
                         (input, dependees) -> {
-                            sleep(persistenceDelayMs);
+                            await(searchStillRunning ? searchStarted : searchReturned);
                             throw new AbortSagaException("Unable to write data using persistence.");
                         },
                         (input, output) -> compensated.add("persistence:" + output)))
                 .register(new Adapter<>(String.class, "search",
                         (input, dependees) -> {
-                            sleep(searchDelayMs);
+                            searchStarted.countDown();
+                            if (searchStillRunning) {
+                                sleep(300); // still running while the abort is handled
+                            }
+                            searchReturned.countDown();
                             return "search-out";
                         },
                         (input, output) -> compensated.add("search:" + output)));
@@ -85,9 +110,9 @@ public class SagaExecutionAbortNextToSiblingTest {
         return logPool.connect(logPool.idFor(logPool.getLocalClusterInstanceId(), "abort-" + UUID.randomUUID()));
     }
 
-    private String run(long persistenceDelayMs, long searchDelayMs) {
+    private String run(boolean searchStillRunning) {
         SagaLog sagaLog = newSagaLog();
-        SagaHandoffControl control = new SagaExecution(sagaLog, pool, SAGA, adapters(persistenceDelayMs, searchDelayMs))
+        SagaHandoffControl control = new SagaExecution(sagaLog, pool, SAGA, adapters(searchStillRunning))
                 .executeSaga(UUID.randomUUID().toString(), "{}", false, r -> {
                 });
         CompletionException e = expectThrows(CompletionException.class, () -> control.getCompletionFuture().join());
@@ -104,7 +129,7 @@ public class SagaExecutionAbortNextToSiblingTest {
 
     @Test
     public void thatASiblingThatHasFinishedIsCompensated() {
-        String entries = run(200, 0);
+        String entries = run(false);
         // order between the parallel branches varies; compare as sets, then check the order that matters
         assertEquals(sorted(entries), sorted(
                 "Start:S Start:txlog End:txlog Start:persistence Start:search End:search Abort:persistence"
@@ -115,7 +140,7 @@ public class SagaExecutionAbortNextToSiblingTest {
 
     @Test
     public void thatASiblingStillRunningDuringTheAbortFinishesAndIsCompensated() {
-        String entries = run(0, 300);
+        String entries = run(true);
         assertEquals(sorted(entries), sorted(
                 "Start:S Start:txlog End:txlog Start:persistence Start:search Abort:persistence End:search"
                         + " CompStart:search Comp:search CompStart:txlog Comp:txlog End:E"));
