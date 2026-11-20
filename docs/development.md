@@ -64,6 +64,9 @@ Module dependencies use `${project.version}`, so the reactor builds them togethe
   module's pom; Renovate (`renovate.json`, Cantara's shared configuration) proposes updates.
 - **Java modules.** Every library module has a `module-info.java`. A type from another module in a public signature
   needs `requires transitive`. Tests run inside the module (patched in), so a test needs only what the module reads.
+  A library module must not require an automatic module (a jar without `module-info`): jlink rejects those, and
+  applications that build a runtime image could not use the library. Load such a dependency at run time instead, as
+  `sagalog-postgres` does with the JDBC driver; `PostgresSagaLogModuleGraphTest` checks its graph.
 - **Providers.** A new saga-log provider registers its `SagaLogInitializer` in both `module-info.java` and
   `META-INF/services` (see [sagalog-api](modules/sagalog-api.md#writing-a-provider)).
 - **Compatibility.** The library is used by applications other than those in this repository. A change of behaviour,
