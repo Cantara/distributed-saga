@@ -216,16 +216,38 @@ waits for every walk of a successful saga to end, and checks that every node was
 
 ## 9. Shut down
 
-Shut down the thread pool you created, and call `SagaLogPool.shutdown()` to close the pool's logs. `shutdown()` lets
-running sagas finish. After `shutdownNow()`, cancel the tasks it returns, so that a saga whose walks were all queued
-completes its futures:
+The library owns no threads and no shutdown order: the application does. Shut down in this order, so that no saga is
+cut off between two steps and nothing calls the saga-log pool after it has closed:
 
-```java
-for (Runnable task : pool.shutdownNow()) {
-    if (task instanceof Future) {
-        ((Future<?>) task).cancel(false);
-    }
-}
-``` After that the pool
-refuses `connect`, `tryAcquire` and `tryTakeOwnership` with `SagaPoolShutdownException`, so shut it down after the
-sagas and the recovery that use it have stopped.
+1. **Stop new work.** Stop accepting requests that start sagas, and stop your recovery trigger, so that no new saga
+   and no new `tryAcquire` or `tryTakeOwnership` starts.
+2. **Wait for the running sagas,** on their completion futures (or until their `onComplete` has run), with a bound
+   that you choose.
+3. **Shut down the thread pool you created.** `shutdown()` lets walks that are already queued run. A walk that a step
+   submits after this is rejected: that saga fails through its futures with `RejectedExecutionException`, and
+   `onComplete` is called once with a failure. Its log keeps the entries written so far, so recovery finishes the saga
+   after a restart. If you use `shutdownNow()`, cancel the tasks it returns, so that a saga whose walks were all
+   queued completes its futures:
+
+   ```java
+   for (Runnable task : pool.shutdownNow()) {
+       if (task instanceof Future) {
+           ((Future<?>) task).cancel(false);
+       }
+   }
+   ```
+
+4. **Call `SagaLogPool.shutdown()`** to close the pool's logs. After that the pool refuses `connect`, `tryAcquire` and
+   `tryTakeOwnership` with `SagaPoolShutdownException`. A caller that still arrives late (a recovery timer, a request
+   in flight) should treat that exception as "shutting down", not as an error. When the call is made inside a
+   `CompletableFuture`, it arrives as the cause of a `CompletionException`.
+5. Then close what the logs use: the `DataSource`, or the folder of the file log.
+
+**Release what a saga holds in `onComplete`,** or on the completion future: its saga log (`releaseOwnership(owner,
+logId)`) and anything you use to limit concurrent sagas, such as a semaphore permit. `onComplete` sees every outcome,
+including a walk the thread pool rejected; a `catch` around `executeSaga` does not, because `executeSaga` reports a
+rejection through the futures, not by throwing.
+
+**Testing shutdown with a saga between two steps.** Give one step an adapter that blocks on a latch the test controls:
+start the saga, wait until the step has entered the adapter, start the shutdown, and release the latch before or
+after the thread pool is shut down. `SagaExecutionShutdownTest` in `saga-execution` does this.
