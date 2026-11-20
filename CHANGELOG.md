@@ -14,8 +14,9 @@ No behaviour or API changes: code quality from SonarCloud, and CI.
   - `PostgresSagaLogId.SCHEMA` (package-private) is `SCHEMA_PATTERN`; the sample adapters' `NAME` is `ADAPTER_NAME`.
   - SQL that formats validated, quoted identifiers into a statement (`sagalog-postgres`), and `FileSagaLogLock`'s
     channel, which is always closed, carry `@SuppressWarnings` with the reason.
-- **Tests:** the se-2 test (`SagaExecutionFailureTest`) no longer depends on thread timing; it failed on the two-core
-  CI runner, while the engine behaved correctly.
+- **Tests:** two tests no longer depend on thread timing: the se-2 test (`SagaExecutionFailureTest`) and
+  `SagaExecutionAbortNextToSiblingTest`, which order the branches of a fork with latches instead of sleeps. They failed
+  on the two-core CI runner and on Jenkins, while the engine behaved correctly.
 - **README:** SonarCloud quality-gate and reliability badges.
 
 ## 2.1.2 (2026-11-20)
