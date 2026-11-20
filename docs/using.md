@@ -223,9 +223,12 @@ cut off between two steps and nothing calls the saga-log pool after it has close
    and no new `tryAcquire` or `tryTakeOwnership` starts.
 2. **Wait for the running sagas,** on their completion futures (or until their `onComplete` has run), with a bound
    that you choose.
-3. **Shut down the thread pool you created.** `shutdown()` lets walks that are already queued run. A walk that a step
-   submits after this is rejected: that saga fails through its futures with `RejectedExecutionException`, and
-   `onComplete` is called once with a failure. The entries written so far stay in the log unless `onComplete`
+3. **Shut down the thread pool you created.** `shutdown()` lets walks that are already queued run. A running walk
+   continues on its own thread: after a step with one next step, the walk goes on to it without the pool, so a
+   linear saga that is mid-way finishes even after the pool is shut down. Only where the saga forks (a step with two
+   or more next steps) does the walk hand every next step but the last to the pool. After shutdown that hand-over is
+   rejected: the saga fails through its futures with `RejectedExecutionException`, and `onComplete` is called once
+   with a failure. The entries written so far stay in the log unless `onComplete`
    truncates it; keep them when the result is a failure if recovery should finish the saga after a restart. If you use `shutdownNow()`, cancel the tasks it returns, so that a saga whose walks were all
    queued completes its futures:
 
@@ -248,6 +251,9 @@ logId)`) and anything you use to limit concurrent sagas, such as a semaphore per
 including a walk the thread pool rejected; a `catch` around `executeSaga` does not, because `executeSaga` reports a
 rejection through the futures, not by throwing.
 
-**Testing shutdown with a saga between two steps.** Give one step an adapter that blocks on a latch the test controls:
-start the saga, wait until the step has entered the adapter, start the shutdown, and release the latch before or
-after the thread pool is shut down. `SagaExecutionShutdownTest` in `saga-execution` does this.
+**Testing shutdown with a saga between two steps.** Give one step an adapter that blocks on a latch the test controls,
+and let that step fork into two or more next steps (for example `S -> a -> (b, c) -> E`, with `a` held): start the
+saga, wait until `a` has entered the adapter, start the shutdown, and release the latch before or after the thread
+pool is shut down. Released before, the saga succeeds; released after, the hand-over at the fork is rejected and the
+saga fails. With a linear `S -> a -> b -> E` nothing is handed to the pool after `a`, so the saga succeeds either way.
+`SagaExecutionShutdownTest` in `saga-execution` uses a blocking adapter this way.
