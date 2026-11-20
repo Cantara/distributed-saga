@@ -1,0 +1,75 @@
+name: CI
+
+# One job on JDK 17, the library's target (it is shared with other products, so it stays on 17). Every run: build and
+# every test, the fault matrix included; the PostgreSQL tests run an embedded PostgreSQL 18, so no Docker is needed.
+# Pushes to main and release tags, and pull requests from this repository, add coverage and the SonarCloud analysis
+# (not gating; pull requests from forks get no token). CI publishes nothing: releases are made on Jenkins.
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'knowledge.yaml'
+      - '.github/workflows/sign-kcp.yml'
+      - 'renovate.json'
+      - '.gitignore'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'knowledge.yaml'
+      - '.github/workflows/sign-kcp.yml'
+      - 'renovate.json'
+      - '.gitignore'
+  # To run it on any branch by hand.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request or branch ends the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (JDK 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Coverage and SonarCloud: pushes, and pull requests from this repository (a fork's gets no secrets).
+      ANALYSE: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # SonarCloud needs the history to attribute new code.
+          fetch-depth: ${{ env.ANALYSE == 'true' && '0' || '1' }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880  # v6.3.0
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Build and test
+        if: env.ANALYSE != 'true'
+        run: mvn --batch-mode --no-transfer-progress verify
+
+      - name: Build, test and coverage
+        if: env.ANALYSE == 'true'
+        run: mvn --batch-mode --no-transfer-progress verify -P coverage
+
+      # Analysis only: a SonarCloud outage or token problem must not fail the build, so this step does not gate.
+      # On a pull request the scanner reads the pull request number, branch and base from GitHub Actions itself.
+      # SonarCloud's Automatic Analysis must be off for this project, or the scanner refuses to run.
+      - name: SonarCloud
+        if: env.ANALYSE == 'true'
+        continue-on-error: true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONARCLOUD_TOKEN }}
+        run: mvn --batch-mode --no-transfer-progress -P sonar org.sonarsource.scanner.maven:sonar-maven-plugin:sonar

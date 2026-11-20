@@ -102,6 +102,29 @@
     </dependencyManagement>
 
     <profiles>
+        <!-- JaCoCo coverage for SonarCloud: each module writes its own report (target/site/jacoco/jacoco.xml). -->
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- One SonarCloud project for the whole reactor. CI runs it after "verify -P coverage"; see .github/workflows/ci.yml. -->
+        <profile>
+            <id>sonar</id>
+            <properties>
+                <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+                <sonar.organization>cantara</sonar.organization>
+                <sonar.projectKey>Cantara_distributed-saga</sonar.projectKey>
+            </properties>
+        </profile>
+
         <profile>
             <id>release</id>
             <build>
