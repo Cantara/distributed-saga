@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.1.3 (2026-11-20)
+
+No behaviour or API changes: code quality from SonarCloud, and CI.
+
+### Changed
+- **CI on GitHub Actions** (`.github/workflows/ci.yml`): every push to `main` and every pull request builds on JDK 17
+  and runs every test, the fault matrix included; pushes and pull requests from this repository add JaCoCo coverage
+  (`-P coverage`) and a SonarCloud analysis (`-P sonar`). Releases are still made on Jenkins.
+- **SonarCloud findings** (28, all settled; 0 bugs, vulnerabilities, code smells and hotspots after):
+  - `FutureSelector.select` restores the interrupt where it catches `InterruptedException` (`launder` already did).
+  - `SagaExecution`'s backward visit returns nothing instead of always `null`.
+  - `PostgresSagaLogId.SCHEMA` (package-private) is `SCHEMA_PATTERN`; the sample adapters' `NAME` is `ADAPTER_NAME`.
+  - SQL that formats validated, quoted identifiers into a statement (`sagalog-postgres`), and `FileSagaLogLock`'s
+    channel, which is always closed, carry `@SuppressWarnings` with the reason.
+- **Tests:** the se-2 test (`SagaExecutionFailureTest`) no longer depends on thread timing; it failed on the two-core
+  CI runner, while the engine behaved correctly.
+- **README:** SonarCloud quality-gate and reliability badges.
+
 ## 2.1.2 (2026-11-20)
 
 ### Added
