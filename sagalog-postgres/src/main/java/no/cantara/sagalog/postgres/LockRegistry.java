@@ -24,6 +24,9 @@ final class LockRegistry {
      * Adds the token column to a {@code Locks} table made before it existed (2.1.0 and earlier). Idempotent; the table
      * is altered only when the column is missing.
      */
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     static void migrate(Connection connection, String schema) throws SQLException {
         try (PreparedStatement ps = connection.prepareStatement(
                 "SELECT 1 FROM information_schema.columns WHERE table_schema = ? AND table_name = 'Locks' AND column_name = 'owner_token'")) {
@@ -43,6 +46,9 @@ final class LockRegistry {
      * @return the log's lock key, assigning a free one if the log has none. Two processes that open a new log at once
      * get the same key.
      */
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     static long keyFor(Connection connection, PostgresSagaLogId id, Random random) throws SQLException {
         Long existing = findKey(connection, id);
         if (existing != null) {
@@ -62,6 +68,9 @@ final class LockRegistry {
         return key;
     }
 
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     static Long findKey(Connection connection, PostgresSagaLogId id) throws SQLException {
         try (PreparedStatement ps = connection.prepareStatement("SELECT lock_key FROM " + id.qualifiedLocksTableName()
                 + " WHERE namespace = ? AND instance_id = ? AND log_id = ?")) {
@@ -72,6 +81,9 @@ final class LockRegistry {
         }
     }
 
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     private static long findAvailableKey(Connection connection, PostgresSagaLogId id, Random random) throws SQLException {
         try (PreparedStatement ps = connection.prepareStatement("SELECT 1 FROM " + id.qualifiedLocksTableName() + " WHERE lock_key = ?")) {
             for (int i = 0; i < 10; i++) {
@@ -92,6 +104,9 @@ final class LockRegistry {
      *
      * @return the token, or null if the log has no row (it was deleted)
      */
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     static Long claim(Connection connection, PostgresSagaLogId id, Random random) throws SQLException {
         long token;
         do {
@@ -110,6 +125,9 @@ final class LockRegistry {
     /**
      * @return the current ownership token, or null if the log has no row (it was deleted)
      */
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     static Long token(Connection connection, PostgresSagaLogId id) throws SQLException {
         try (PreparedStatement ps = connection.prepareStatement("SELECT owner_token FROM " + id.qualifiedLocksTableName()
                 + " WHERE namespace = ? AND instance_id = ? AND log_id = ?")) {
@@ -120,6 +138,9 @@ final class LockRegistry {
         }
     }
 
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     static void delete(Connection connection, PostgresSagaLogId id) throws SQLException {
         try (PreparedStatement ps = connection.prepareStatement("DELETE FROM " + id.qualifiedLocksTableName()
                 + " WHERE namespace = ? AND instance_id = ? AND log_id = ?")) {

@@ -18,7 +18,6 @@ import org.testng.annotations.Test;
 
 import java.util.List;
 import java.util.Map;
-import java.util.ServiceLoader;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -66,8 +65,7 @@ public class SagaExecutionTest {
 
     private void executeAndVerifyThatActionsWereExecuted(String requestData, Saga saga) {
         AtomicBoolean rollbackRecoveryRun = new AtomicBoolean(false);
-        ServiceLoader<SagaLogInitializer> loader = ServiceLoader.load(SagaLogInitializer.class);
-        SagaLogInitializer sagaLogInitializer = loader.stream().filter(c -> "no.cantara.sagalog.memory.MemorySagaLogInitializer".equals(c.type().getName())).findFirst().orElseThrow().get();
+        SagaLogInitializer sagaLogInitializer = MemoryLogs.memoryInitializer();
         SagaLogPool sagaLogPool = sagaLogInitializer.initialize(sagaLogInitializer.configurationOptionsAndDefaults());
         SagaLog sagaLog = new SagaLog() {
             @Override

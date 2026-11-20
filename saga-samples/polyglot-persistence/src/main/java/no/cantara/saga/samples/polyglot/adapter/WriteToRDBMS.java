@@ -9,10 +9,10 @@ import java.util.UUID;
 
 public class WriteToRDBMS extends Adapter<JSONObject> {
 
-    public static final String NAME = "RDBMS";
+    public static final String ADAPTER_NAME = "RDBMS";
 
     public WriteToRDBMS(Class<JSONObject> outputClazz) {
-        super(outputClazz, NAME);
+        super(outputClazz, ADAPTER_NAME);
     }
 
     @Override

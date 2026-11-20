@@ -9,10 +9,10 @@ import java.util.UUID;
 
 public class PublishToPubSub extends Adapter<JSONObject> {
 
-    public static final String NAME = "PubSub";
+    public static final String ADAPTER_NAME = "PubSub";
 
     public PublishToPubSub(Class<JSONObject> outputClazz) {
-        super(outputClazz, NAME);
+        super(outputClazz, ADAPTER_NAME);
     }
 
     @Override

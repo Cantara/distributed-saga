@@ -244,6 +244,9 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
         }
     }
 
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     static void createSchemaIfNotExists(Connection connection, String schema, String username) throws SQLException {
         try (Statement st = connection.createStatement()) {
             st.executeUpdate("CREATE SCHEMA IF NOT EXISTS " + PostgresSagaLogId.quote(schema)
@@ -254,6 +257,9 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
     /**
      * Creates the Locks table, or adds the {@code owner_token} column to one made by 2.1.0 or earlier.
      */
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
+    @SuppressWarnings("java:S2077")
     static void createLocksTableIfNotExists(Connection connection, String schema) throws SQLException {
         try (Statement st = connection.createStatement()) {
             st.executeUpdate("""

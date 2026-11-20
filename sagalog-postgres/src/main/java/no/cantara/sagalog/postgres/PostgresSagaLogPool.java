@@ -90,7 +90,10 @@ class PostgresSagaLogPool extends AbstractSagaLogPool {
      * @throws SagaLogBusyException     if another process holds the log
      * @throws PostgresSagaLogException if the database fails
      */
+    // java:S2077: only identifiers are formatted into this SQL, from PostgresSagaLogId: checked against a strict
+    // pattern and quoted (sp-6). Values are bound parameters.
     @Override
+    @SuppressWarnings("java:S2077")
     protected boolean deleteExternal(SagaLogId logId) {
         PostgresSagaLogId id = (PostgresSagaLogId) logId;
         String resource = "saga log " + id.getSchema() + "." + id.getTableName();

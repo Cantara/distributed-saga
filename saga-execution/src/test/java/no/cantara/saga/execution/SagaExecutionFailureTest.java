@@ -14,10 +14,10 @@ import org.testng.annotations.Test;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -78,9 +78,7 @@ public class SagaExecutionFailureTest {
     }
 
     private SagaLog newSagaLog() {
-        SagaLogInitializer initializer = ServiceLoader.load(SagaLogInitializer.class).stream()
-                .filter(c -> "no.cantara.sagalog.memory.MemorySagaLogInitializer".equals(c.type().getName()))
-                .findFirst().orElseThrow().get();
+        SagaLogInitializer initializer = MemoryLogs.memoryInitializer();
         SagaLogPool logPool = initializer.initialize(initializer.configurationOptionsAndDefaults());
         return logPool.connect(logPool.idFor(logPool.getLocalClusterInstanceId(), "failure-" + UUID.randomUUID()));
     }
@@ -182,20 +180,32 @@ public class SagaExecutionFailureTest {
 
     @Test
     public void thatAFailedSagaCompletesOnlyOnceItsOtherBranchesHaveEnded() {
-        // se-2: S -> f, slow; f -> E; slow -> next -> E. f fails at once while slow runs: the saga reports completion
-        // only after slow has ended, and next, behind the failure, never starts
+        // se-2: S -> f, slow; f -> E; slow -> next -> E. f fails while slow runs: the saga reports completion only
+        // after slow has ended, and next, behind the failure, never starts. f fails only once slow has started, so
+        // that slow is running when it fails; without that, f can fail before slow starts, and the saga then rightly
+        // never starts slow (seen on a two-core CI runner).
+        CountDownLatch slowStarted = new CountDownLatch(1);
         Saga saga = Saga.start("after").linkTo("f", "slow")
-                .id("f").adapter("fails-at-once").linkToEnd()
+                .id("f").adapter("fails-once-slow-runs").linkToEnd()
                 .id("slow").adapter("slow").linkTo("next")
                 .id("next").adapter("ok").linkToEnd()
                 .end();
         AdapterLoader adapters = new AdapterLoader()
                 .register(new Adapter<>(String.class, "ok", (i, d) -> "ok"))
                 .register(new Adapter<>(String.class, "slow", (i, d) -> {
+                    slowStarted.countDown();
                     sleep(300);
                     return "slow";
                 }))
-                .register(new Adapter<>(String.class, "fails-at-once", (i, d) -> {
+                .register(new Adapter<>(String.class, "fails-once-slow-runs", (i, d) -> {
+                    try {
+                        if (!slowStarted.await(5, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("slow never started");
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("interrupted", e);
+                    }
                     throw new IllegalStateException("not an abort");
                 }));
         SagaLog log = newSagaLog();

@@ -103,13 +103,13 @@ public class PolyglotMainTest {
         AtomicInteger rdbmsRuns = new AtomicInteger();
         AtomicInteger pubsubRuns = new AtomicInteger();
         AdapterLoader adapters = new AdapterLoader()
-                .register(new Adapter<>(JSONObject.class, WriteToRDBMS.NAME, (in, out) -> {
+                .register(new Adapter<>(JSONObject.class, WriteToRDBMS.ADAPTER_NAME, (in, out) -> {
                     rdbmsRuns.incrementAndGet();
                     return new JSONObject();
                 }))
                 .register(new WriteToGraph(JSONObject.class))
                 .register(new WriteToObjectStore(JSONObject.class))
-                .register(new Adapter<>(JSONObject.class, PublishToPubSub.NAME, (in, out) -> {
+                .register(new Adapter<>(JSONObject.class, PublishToPubSub.ADAPTER_NAME, (in, out) -> {
                     pubsubRuns.incrementAndGet();
                     return new JSONObject();
                 }));
@@ -130,7 +130,7 @@ public class PolyglotMainTest {
     @Test
     public void thatARolledBackSagaGets409WithTheExecutionId() throws IOException {
         AdapterLoader adapters = new AdapterLoader()
-                .register(new Adapter<>(JSONObject.class, WriteToRDBMS.NAME, (in, out) -> {
+                .register(new Adapter<>(JSONObject.class, WriteToRDBMS.ADAPTER_NAME, (in, out) -> {
                     throw new AbortSagaException("rdbms said no");
                 }))
                 .register(new WriteToGraph(JSONObject.class))
@@ -157,7 +157,7 @@ public class PolyglotMainTest {
                 .register(new WriteToRDBMS(JSONObject.class))
                 .register(new WriteToGraph(JSONObject.class))
                 .register(new WriteToObjectStore(JSONObject.class))
-                .register(new Adapter<>(JSONObject.class, PublishToPubSub.NAME, (in, out) -> {
+                .register(new Adapter<>(JSONObject.class, PublishToPubSub.ADAPTER_NAME, (in, out) -> {
                     throw new IllegalStateException("pubsub is down");
                 }));
         PolyglotMain polyglotMain = new PolyglotMain(configuration("sagalogtest-fail"), adapters).start();

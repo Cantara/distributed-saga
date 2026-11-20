@@ -20,10 +20,19 @@ final class MemoryLogs {
     }
 
     private static SagaLogPool createPool() {
-        SagaLogInitializer initializer = ServiceLoader.load(SagaLogInitializer.class).stream()
+        SagaLogInitializer initializer = memoryInitializer();
+        return initializer.initialize(initializer.configurationOptionsAndDefaults());
+    }
+
+    /**
+     * The memory log's initializer, found as a service. Its package is not exported, so the class cannot be named here
+     * and is matched by name instead of {@code instanceof}.
+     */
+    @SuppressWarnings("java:S1872")
+    static SagaLogInitializer memoryInitializer() {
+        return ServiceLoader.load(SagaLogInitializer.class).stream()
                 .filter(c -> "no.cantara.sagalog.memory.MemorySagaLogInitializer".equals(c.type().getName()))
                 .findFirst().orElseThrow().get();
-        return initializer.initialize(initializer.configurationOptionsAndDefaults());
     }
 
     static SagaLog newLog() {

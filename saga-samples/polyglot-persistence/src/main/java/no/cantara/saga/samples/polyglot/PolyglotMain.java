@@ -66,10 +66,8 @@ public class PolyglotMain {
                 runnable -> {
                     Thread thread = new Thread(runnable);
                     thread.setName("sec-worker" + nextWorkerId.getAndIncrement());
-                    thread.setUncaughtExceptionHandler((t, e) -> {
-                        System.err.println("Uncaught exception in thread " + thread.getName());
-                        e.printStackTrace();
-                    });
+                    thread.setUncaughtExceptionHandler((t, e) -> System.getLogger(PolyglotMain.class.getName())
+                            .log(System.Logger.Level.ERROR, "Uncaught exception in thread " + t.getName(), e));
                     return thread;
                 },
                 new ThreadPoolExecutor.AbortPolicy()
