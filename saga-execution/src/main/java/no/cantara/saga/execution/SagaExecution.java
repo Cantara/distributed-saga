@@ -233,26 +233,29 @@ public class SagaExecution {
          */
         private void rollback(AbortSagaException abort) {
             Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId = sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId);
-            new SagaTraversal(executorService, saga, walks).backwardOnThisThread(ste -> visitBackward(ste, sagaLogEntriesBySagaNodeId, abort));
+            new SagaTraversal(executorService, saga, walks).backwardOnThisThread(ste -> {
+                visitBackward(ste, sagaLogEntriesBySagaNodeId, abort);
+                return null; // a backward visit has no output
+            });
         }
 
-        private Object visitBackward(SagaTraversalElement ste, Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId, AbortSagaException abort) {
+        private void visitBackward(SagaTraversalElement ste, Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId, AbortSagaException abort) {
             if (Saga.ID_END.equals(ste.node.id)) {
-                return null;
+                return;
             }
             if (Saga.ID_START.equals(ste.node.id)) {
                 sagaLog.write(sagaLog.builder().endSaga(executionId)).join();
                 completionFuture.completeExceptionally(abort);
-                return null;
+                return;
             }
             SagaAdapter<?> adapter = adapterLoader.load(ste.node);
             List<SagaLogEntry> sagaLogEntries = sagaLogEntriesBySagaNodeId.get(ste.node.id);
             SagaLogEntryType lastEntryType = lastEntryType(sagaLogEntries);
             if (lastEntryType == null || lastEntryType == SagaLogEntryType.Abort || lastEntryType == SagaLogEntryType.Comp) {
-                return null; // never started, the aborting node itself, or already compensated
+                return; // never started, the aborting node itself, or already compensated
             }
             if (!adapter.hasCompensatingAction()) {
-                return null; // nothing to undo; its effect stays and no compensation is logged
+                return; // nothing to undo; its effect stays and no compensation is logged
             }
             // the action started but did not end (last entry Start): it may or may not have run; no output
             Optional<String> serializedOutput = lastEntryType == SagaLogEntryType.End || lastEntryType == SagaLogEntryType.CompStart
@@ -264,7 +267,6 @@ public class SagaExecution {
             }
             compensate(adapter, ste.node, sagaInput, serializedOutput);
             sagaLog.write(sagaLog.builder().compDone(executionId, ste.node.id)).join();
-            return null; // no output from running compensating action.
         }
     }
 

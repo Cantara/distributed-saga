@@ -56,6 +56,9 @@ final class FileSagaLogLock implements AutoCloseable {
      * @throws SagaLogBusyException if another process, or another open log or delete in this process, holds it
      * @throws IOException          if the lock file cannot be opened, for example because the folder is missing
      */
+    // java:S2095: the channel is not leaked. On success the returned lock owns it and closes it in close(); on every
+    // failure the catch closes it.
+    @SuppressWarnings("java:S2095")
     static FileSagaLogLock acquire(Path logPath) throws SagaLogBusyException, IOException {
         Path lockFile = logPath.getParent().toRealPath().resolve(logPath.getFileName() + ".lock");
         if (!HELD.add(lockFile)) {
