@@ -10,7 +10,6 @@ module no.cantara.sagalog.postgres {
 
     // PostgresSagaLogException, so a caller on the module path can catch it; the other public type is the initializer
     exports no.cantara.sagalog.postgres;
-    opens no.cantara.sagalog.postgres;
 
     provides SagaLogInitializer with PostgresSagaLogInitializer;
 }
