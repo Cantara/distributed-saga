@@ -138,16 +138,28 @@ a rolling upgrade a log taken over by an old process in that window is not detec
   used up, opening a log waits once for the connection timeout and fails with `PostgresSagaLogException` whose message
   gives the pool size and says to raise `connection-pool.max-size`; when the pool is short because the database refused
   a connection, the message says so instead, since a larger pool would not help.
-- The pool holds all of its `connection-pool.max-size` connections from the start (HikariCP's minimum idle is its
-  maximum). `initialize` takes them all at once and gives them back, and fails with `PostgresSagaLogException` if the
-  database does not give them within `connection-pool.connection-timeout`: PostgreSQL's `max_connections` is used up
-  (`too many clients`), or a role's or the database's `CONNECTION LIMIT` is reached. Without this check, HikariCP would
-  start with one connection and only log the refusals, and the logs would fail later, under load. The message gives
-  how many connections the pool got, the server's `max_connections`, `superuser_reserved_connections`,
-  `reserved_connections`, the client connections in use, any `CONNECTION LIMIT`, and the keys to change. The check
-  asks the server rather than estimating from `pg_stat_activity`, which other clients change at any time. Several
-  processes on one server need room for all their pools together; the second process to start fails at once if there is
-  none.
+- The pool holds all of its `connection-pool.max-size` connections while it runs (HikariCP's minimum idle is its
+  maximum); only when HikariCP replaces one (after its `maxLifetime`, or when one fails) is a server slot free for a
+  moment. `initialize` takes them all at once and gives them back, so that a pool that does not fit fails at start
+  rather than under load: HikariCP starts with one connection and logs its refusals only at DEBUG.
+  - When the database refuses a connection for lack of connections (SQLState `53300`: `max_connections` is used up,
+    `too many clients`, or the slots left are reserved for superusers, or a role's or the database's `CONNECTION LIMIT`
+    is reached), `initialize` closes the pool and throws `PostgresSagaLogException` at once. It does not wait for the
+    connection timeout, because while it waits it holds the server's last free connections and every other client of
+    the server is refused too.
+  - Any other failure to open a connection (a network blip, a failover, a slow login) may pass, so `initialize` keeps
+    waiting, and fails only when no connection has come for a whole `connection-pool.connection-timeout`. Each
+    connection gets the full timeout, so a large pool on a slow link has the time it needs.
+  - The message gives how many connections the pool got, the server's `max_connections`,
+    `superuser_reserved_connections`, `reserved_connections`, the client connections in use (counted also for a role
+    that cannot see other users' sessions in full), any `CONNECTION LIMIT`, the SQLState, and what to change.
+  - The check asks the server for the connections rather than estimating from `pg_stat_activity`, which other clients
+    change at any time. Processes on one server need room for all their pools together. When several start at once
+    and only some fit, each may fill part of its pool, be refused, and fail; an application that retries `initialize`
+    should wait a random time between tries, so that they do not keep colliding.
+  - Behind a connection pooler such as PgBouncer, the check proves only that the pooler accepted the connections; the
+    pooler opens its server connections later. (The saga log needs session pooling in any case: its advisory lock
+    belongs to the server session.)
 - Every operation runs in a transaction on that connection. When a statement or its commit fails because the
   connection is gone (SQLState class `08`, or `57P01` to `57P03`), the log reconnects as above and runs the operation
   once more. Any other failure (a timeout, a missing table, a constraint) is not retried. Failing to get a connection

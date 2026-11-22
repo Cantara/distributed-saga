@@ -126,14 +126,19 @@ public class PostgresSagaLogStartCheckTest {
     public void thatInitializeFailsWhenTheServerHasNoRoomForThePool() throws Exception {
         leaveFree(3);
 
+        Map<String, String> configuration = configuration(5, "start-full");
+        configuration.put("connection-pool.connection-timeout", "10000");
+        long start = System.nanoTime();
         PostgresSagaLogException e = expectThrows(PostgresSagaLogException.class,
-                () -> new PostgresSagaLogInitializer().initializePool(configuration(5, "start-full")));
+                () -> new PostgresSagaLogInitializer().initializePool(configuration));
+        long ms = (System.nanoTime() - start) / 1_000_000;
 
+        // at the first refusal, not after the connection timeout: while it waits, it holds the server's free slots
+        assertTrue(ms < 5000, "failed after " + ms + " ms, not at the first refusal");
         String message = e.getMessage();
         assertEquals(e.getOperation(), "initialize");
         assertEquals(e.getSqlState(), "53300", message); // too_many_connections
-        assertTrue(message.contains("gave the pool 3 of its 5 connections (connection-pool.max-size)"), message);
-        assertTrue(message.contains("connection-pool.connection-timeout"), message);
+        assertTrue(message.contains("gave the pool 3 of its 5 connections (connection-pool.max-size) and refused more"), message);
         assertTrue(message.contains("max_connections " + MAX_CONNECTIONS), message);
         assertTrue(message.contains("superuser_reserved_connections"), message);
         assertTrue(message.contains("too many clients"), message);
@@ -162,6 +167,53 @@ public class PostgresSagaLogStartCheckTest {
             assertTrue(e.getMessage().contains("the pool has only 2 of its 3 connections, because the database refused more"),
                     e.getMessage());
             assertTrue(e.getMessage().contains("too many connections for role"), e.getMessage());
+        } finally {
+            pool.shutdown();
+        }
+    }
+
+    @Test
+    public void thatInitializeFailsForAnApplicationRoleAndCountsEveryClient() throws Exception {
+        // not a superuser: it cannot use the superuser_reserved_connections (3), so 5 of the 8 are for it and the others
+        execute("CREATE ROLE sagalog_app LOGIN");
+        execute("GRANT CREATE ON DATABASE postgres TO sagalog_app");
+        leaveFree(5); // 3 connections of another user (postgres), 2 left for the application
+
+        PostgresSagaLogException e = expectThrows(PostgresSagaLogException.class, () -> new PostgresSagaLogInitializer()
+                .initializePool(configuration(4, "start-app", "sagalog_app", "sagalog_app")));
+
+        String message = e.getMessage();
+        assertEquals(e.getSqlState(), "53300", message);
+        assertTrue(message.contains("gave the pool 2 of its 4 connections (connection-pool.max-size) and refused more"), message);
+        assertTrue(message.contains("reserved for roles with the SUPERUSER attribute"), message);
+        // read as the application role, which sees other users' sessions without their backend_type
+        assertTrue(message.contains("5 client connections in use"), message);
+        assertTrue(message.endsWith("(SQLState 53300)"), message);
+        awaitClientConnections("start-app", 0);
+    }
+
+    @Test
+    public void thatAPoolThatCannotOpenAConnectionForAnotherReasonDoesNotBlameTheSize() throws Exception {
+        execute("CREATE ROLE sagalog_gone LOGIN");
+        execute("GRANT CREATE ON DATABASE postgres TO sagalog_gone");
+        PostgresSagaLogPool pool = new PostgresSagaLogInitializer()
+                .initializePool(configuration(3, "start-gone", "sagalog_gone", "sagalog_gone"));
+        try {
+            execute("ALTER ROLE sagalog_gone NOLOGIN"); // a failure that is not a lack of connections (28000)
+            Connection lost = pool.dataSource.getConnection();
+            pool.dataSource.evictConnection(lost);
+            awaitClientConnections("start-gone", 2);
+
+            Connection a = pool.dataSource.getConnection();
+            Connection b = pool.dataSource.getConnection();
+            SQLTransientConnectionException e = expectThrows(SQLTransientConnectionException.class, pool.dataSource::getConnection);
+            a.close();
+            b.close();
+
+            String message = e.getMessage();
+            assertTrue(message.contains("the pool has only 2 of its 3 connections, and could not open more"), message);
+            assertTrue(message.contains("not permitted to log in"), message);
+            assertTrue(!message.contains("max_connections") && !message.contains("Raise connection-pool.max-size"), message);
         } finally {
             pool.shutdown();
         }
