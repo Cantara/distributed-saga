@@ -1,6 +1,7 @@
 name: CI
 
-# One job on JDK 17, the library's target (it is shared with other products, so it stays on 17). Every run: build and
+# One job on JDK 25; the code is compiled with --release 17, the library's target (it is shared with other products,
+# so it stays on 17), which the JDK checks against Java 17's API. Every run: build and
 # every test, the fault matrix included; the PostgreSQL tests run an embedded PostgreSQL 18, so no Docker is needed.
 # Pushes to main and release tags, and pull requests from this repository, add coverage and the SonarCloud analysis
 # (not gating; pull requests from forks get no token). CI publishes nothing: releases are made on Jenkins.
@@ -37,7 +38,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build (JDK 17)
+    name: Build (JDK 25)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

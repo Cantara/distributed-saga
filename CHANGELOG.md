@@ -19,6 +19,8 @@
   maximum, the `SQLTransientConnectionException` says whether the database refused more for lack of connections (make
   room on the server) or could not be reached or logged in to, instead of advising a larger pool.
 - `PostgresSagaLogException`'s message ends with the SQLState also when it has a message of its own.
+- **CI builds and tests on JDK 25** (was 17); the code is still compiled with `--release 17`. Test dependency
+  `embedded-postgres` 2.2.3.
 
 ### Migration
 - An application whose pool did not fit on the server used to start and fail later; it now fails to start. Lower
