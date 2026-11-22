@@ -5,6 +5,12 @@
   ],
   "packageRules": [
     {
+      "description": "CI builds on JDK 17, the library's target, and on the newest JDK; the versions are chosen by hand",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["java-jdk"],
+      "enabled": false
+    },
+    {
       "description": "Stay on PostgreSQL 18 until Amazon RDS offers 19 for production (19 is in the RDS preview environment only)",
       "matchPackageNames": [
         "io.zonky.test.postgres:embedded-postgres-binaries-bom",
