@@ -23,6 +23,16 @@ public class PostgresSagaLogException extends RuntimeException {
         this.sqlState = cause instanceof SQLException sql ? sql.getSQLState() : null;
     }
 
+    /**
+     * With a message of its own after the operation and the resource, instead of the cause's.
+     */
+    PostgresSagaLogException(String operation, String resource, String detail, Throwable cause) {
+        super(operation + " failed on " + resource + ": " + detail
+                + (cause instanceof SQLException sql && sql.getSQLState() != null ? " (SQLState " + sql.getSQLState() + ")" : ""), cause);
+        this.operation = operation;
+        this.sqlState = cause instanceof SQLException sql ? sql.getSQLState() : null;
+    }
+
     private static String message(String operation, String resource, Throwable cause) {
         StringBuilder message = new StringBuilder(operation).append(" failed on ").append(resource);
         if (cause != null) {

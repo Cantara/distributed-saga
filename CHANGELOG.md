@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **`sagalog-postgres` fails at start when the database has no room for the pool.** `initialize` takes all
+  `connection-pool.max-size` connections at once and gives them back. When PostgreSQL refuses one for lack of
+  connections (SQLState `53300`: `max_connections` used up, the slots left reserved for superusers, or a role's or the
+  database's `CONNECTION LIMIT`), it closes the pool at once, without waiting for the connection timeout (it would
+  hold the server's free connections meanwhile), and throws `PostgresSagaLogException` (operation `initialize`,
+  SQLState `53300`). Any other failure to open a connection may pass, so it waits, and fails (with that failure's
+  SQLState, or none) only when no connection has come for a whole `connection-pool.connection-timeout`. The message
+  gives how many connections the pool got, the server's `max_connections`, `superuser_reserved_connections`,
+  `reserved_connections`, the client connections in use, any `CONNECTION LIMIT`, and what to change. Before, HikariCP
+  started with one connection and logged its refusals only at DEBUG; each open saga log holds a connection, so the
+  logs failed later, under load, after a connection timeout each. Found by LDS: a second LDS on the same PostgreSQL
+  started, and its writes failed with "too many clients" after 30 s.
+- **A pool that is short of connections says why.** When no connection is available and the pool has fewer than its
+  maximum, the `SQLTransientConnectionException` says whether the database refused more for lack of connections (make
+  room on the server) or could not be reached or logged in to, instead of advising a larger pool.
+- `PostgresSagaLogException`'s message ends with the SQLState also when it has a message of its own.
+
+### Migration
+- An application whose pool did not fit on the server used to start and fail later; it now fails to start. Lower
+  `connection-pool.max-size` or make room on the server. Size the pool for every saga log the application keeps open,
+  plus the logs of other instances it recovers at the same time, plus one (see "Connections" in
+  `docs/modules/sagalog-postgres.md`); processes that share a server need room for all their pools together. An
+  application that retries `initialize` should wait a random time between tries.
+
 ## 2.1.3 (2026-11-20)
 
 No behaviour or API changes: code quality from SonarCloud, and CI.

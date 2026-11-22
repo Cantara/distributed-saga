@@ -2,15 +2,21 @@ package no.cantara.sagalog.postgres;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.pool.HikariPool;
 import no.cantara.sagalog.SagaLogInitializer;
 import no.cantara.sagalog.SagaLogPool;
 
 import javax.sql.DataSource;
 import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLTransientConnectionException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Opens the PostgreSQL saga-log pool: a HikariCP pool, the schema and the {@code Locks} table (created if missing, and
@@ -33,7 +39,9 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
 
     /**
      * @throws IllegalArgumentException if a name is not valid (see {@link PostgresSagaLogId}) or a value is malformed
-     * @throws PostgresSagaLogException if the schema or the Locks table cannot be made
+     * @throws PostgresSagaLogException if the schema or the Locks table cannot be made, or if the database does not give
+     *                                  the pool all of its {@code connection-pool.max-size} connections (see
+     *                                  {@link #checkThatThePoolGetsAllItsConnections})
      */
     @Override
     public SagaLogPool initialize(Map<String, String> configuration) {
@@ -52,11 +60,14 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
 
         HikariDataSource hikariDataSource = createHikariDataSource(configuration);
         PostgresDataSource dataSource = new HikariPostgresDataSource(hikariDataSource);
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
-            createSchemaIfNotExists(connection, clusterOwner, user);
-            createLocksTableIfNotExists(connection, clusterOwner);
-            connection.commit();
+        try {
+            try (Connection connection = dataSource.getConnection()) {
+                connection.setAutoCommit(false);
+                createSchemaIfNotExists(connection, clusterOwner, user);
+                createLocksTableIfNotExists(connection, clusterOwner);
+                connection.commit();
+            }
+            checkThatThePoolGetsAllItsConnections(hikariDataSource);
         } catch (SQLException | RuntimeException e) {
             RuntimeException failure = e instanceof RuntimeException re ? re
                     : new PostgresSagaLogException("initialize", "schema " + clusterOwner, e);
@@ -227,6 +238,183 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
                 throw unchecked(e.getCause());
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException("The PostgreSQL JDBC driver's " + CLASS_NAME + " has no setProperty", e);
+            }
+        }
+    }
+
+    /**
+     * Takes every connection of the pool at once, then gives them all back. Each open saga log holds one connection for
+     * as long as it is open, so a pool that cannot open all of its connections fails later, under load, when one log
+     * too many is opened. HikariCP needs only one connection to start, and fills the rest of the pool in the background,
+     * where a refusal (PostgreSQL's {@code too many clients}, a role's or database's {@code CONNECTION LIMIT}) is only
+     * logged at DEBUG: this check makes it a start failure instead.
+     * <p>
+     * The check asks the server for the connections; it does not estimate them from {@code max_connections} and
+     * {@code pg_stat_activity}, which other clients change at any time. The pool keeps the connections while it runs
+     * (its minimum idle is its maximum size); only when HikariCP replaces one (after {@code maxLifetime}, or when one
+     * fails) is a server slot free for a moment. The server state is read only to explain a failure.
+     * <p>
+     * A refusal for lack of connections (SQLState {@code 53300}) fails the check at once, not after the connection
+     * timeout: while it waits, the check holds the server's last free connections, and every other client of the
+     * server is refused too. Any other failure to open a connection (a network blip, a failover, a slow login) may pass,
+     * so the check keeps waiting, and fails only when no connection has come for a whole connection timeout. A large
+     * pool on a slow link therefore gets the time it needs.
+     * <p>
+     * The check proves that the server, or a connection pooler in front of it, accepted the connections. A pooler such
+     * as PgBouncer opens its server connections later, so the check says nothing about the server behind it.
+     *
+     * @throws PostgresSagaLogException if the database refuses a connection for lack of connections, or no connection
+     *                                  comes within the pool's connection timeout, with a message that gives the pool
+     *                                  size, how many connections the pool got, the server's limits, and what to change
+     */
+    static void checkThatThePoolGetsAllItsConnections(HikariDataSource pool) {
+        int maxSize = pool.getMaximumPoolSize();
+        long timeoutNanos = TimeUnit.MILLISECONDS.toNanos(pool.getConnectionTimeout());
+        List<Connection> held = new ArrayList<>(maxSize);
+        try {
+            while (held.size() < maxSize) {
+                try {
+                    held.add(borrow(pool, System.nanoTime() + timeoutNanos)); // a full timeout for each connection
+                } catch (SQLException e) {
+                    throw notEnoughConnections(pool, held, e);
+                }
+            }
+        } finally {
+            for (Connection connection : held) {
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    // a connection the pool cannot take back is evicted by the pool; the check's outcome stands
+                }
+            }
+        }
+    }
+
+    /** How long one borrow of the check waits before it looks for a refusal again. */
+    private static final long CHECK_STEP_MS = 250;
+
+    /**
+     * A connection from the pool. Fails as soon as the pool's last failure to open a connection is a refusal for lack
+     * of connections (HikariCP gives the timeout exception that failure's SQLState), and otherwise at the deadline.
+     */
+    private static Connection borrow(HikariDataSource dataSource, long deadline) throws SQLException {
+        if (!(dataSource.getHikariPoolMXBean() instanceof HikariPool pool)) {
+            return dataSource.getConnection(); // not expected: then the check waits the whole connection timeout
+        }
+        while (true) {
+            long left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            try {
+                return pool.getConnection(Math.max(1, Math.min(CHECK_STEP_MS, left)));
+            } catch (SQLTransientConnectionException e) {
+                if (HikariPostgresDataSource.refusedForLackOfConnections(e) || left <= CHECK_STEP_MS) {
+                    throw e; // refused, or out of time
+                }
+            }
+        }
+    }
+
+    private static PostgresSagaLogException notEnoughConnections(HikariDataSource pool, List<Connection> held, SQLException e) {
+        StringBuilder detail = new StringBuilder(String.format(
+                "the database gave the pool %d of its %d connections (connection-pool.max-size)", held.size(), pool.getMaximumPoolSize()));
+        Throwable lastFailure = e.getCause(); // HikariCP's last failure to open a connection, if any
+        if (HikariPostgresDataSource.refusedForLackOfConnections(e)) {
+            detail.append(" and refused more. Each open saga log holds one connection for as long as it is open, so the "
+                    + "logs would fail under load. Lower connection-pool.max-size, or make room on the server: raise "
+                    + "max_connections or the CONNECTION LIMIT, or close other clients' connections. Last refusal: ")
+                    .append(rootMessage(lastFailure != null ? lastFailure : e)).append('.');
+        } else {
+            detail.append(String.format("; no further connection came within %d ms (connection-pool.connection-timeout). "
+                    + "Each open saga log holds one connection for as long as it is open. Check that the database is "
+                    + "reachable and accepts connections, or raise connection-pool.connection-timeout.", pool.getConnectionTimeout()));
+            if (lastFailure != null) {
+                detail.append(" Last failure to open a connection: ").append(rootMessage(lastFailure)).append('.');
+            }
+        }
+        Exception readFailure = null;
+        if (!held.isEmpty()) { // nearly always: the pool had a connection for the schema just before
+            try {
+                detail.append(' ').append(ServerConnections.read(held.get(0)));
+            } catch (SQLException | RuntimeException r) {
+                readFailure = r;
+            }
+        }
+        PostgresSagaLogException failure = new PostgresSagaLogException("initialize", "the connection pool", detail.toString(), e);
+        if (readFailure != null) {
+            failure.addSuppressed(readFailure);
+        }
+        return failure;
+    }
+
+    private static String rootMessage(Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return root.getMessage();
+    }
+
+    /**
+     * The server's connection limits and use, read to explain why the pool did not get its connections.
+     */
+    static final class ServerConnections {
+
+        private ServerConnections() {
+        }
+
+        /*
+         * reserved_connections exists from PostgreSQL 16; current_setting(name, true) is null on an older server.
+         * A role without pg_read_all_stats sees the rows of other users' sessions with backend_type null, but with their
+         * user and database: such a row with a database is counted as a client connection.
+         */
+        private static final String SQL = """
+                WITH clients AS (
+                    SELECT usename, datname FROM pg_stat_activity
+                    WHERE backend_type = 'client backend' OR (backend_type IS NULL AND datid IS NOT NULL))
+                SELECT current_setting('max_connections')::int,
+                       current_setting('superuser_reserved_connections')::int,
+                       coalesce(current_setting('reserved_connections', true), '0')::int,
+                       (SELECT count(*) FROM clients),
+                       current_user,
+                       (SELECT rolconnlimit FROM pg_roles WHERE rolname = current_user),
+                       (SELECT count(*) FROM clients WHERE usename = current_user),
+                       current_database(),
+                       (SELECT datconnlimit FROM pg_database WHERE datname = current_database()),
+                       (SELECT count(*) FROM clients WHERE datname = current_database())
+                """;
+
+        static String read(Connection connection) throws SQLException {
+            String result;
+            try (Statement st = connection.createStatement(); ResultSet rs = st.executeQuery(SQL)) {
+                rs.next();
+                StringBuilder s = new StringBuilder(String.format(
+                        "Server: max_connections %d, superuser_reserved_connections %d, reserved_connections %d, "
+                                + "%d client connections in use",
+                        rs.getInt(1), rs.getInt(2), rs.getInt(3), rs.getLong(4)));
+                int roleLimit = rs.getInt(6);
+                if (roleLimit >= 0) {
+                    s.append(String.format("; role %s has CONNECTION LIMIT %d, %d in use", rs.getString(5), roleLimit, rs.getLong(7)));
+                }
+                int databaseLimit = rs.getInt(9);
+                if (databaseLimit >= 0) {
+                    s.append(String.format("; database %s has CONNECTION LIMIT %d, %d in use", rs.getString(8), databaseLimit, rs.getLong(10)));
+                }
+                result = s.append('.').toString();
+            } catch (SQLException | RuntimeException e) {
+                try {
+                    endTransaction(connection);
+                } catch (SQLException | RuntimeException rollbackFailure) {
+                    e.addSuppressed(rollbackFailure); // the query's failure is the one to report
+                }
+                throw e;
+            }
+            endTransaction(connection);
+            return result;
+        }
+
+        /* the pool's connections do not auto-commit; one that does has no transaction to end */
+        private static void endTransaction(Connection connection) throws SQLException {
+            if (!connection.getAutoCommit()) {
+                connection.rollback();
             }
         }
     }

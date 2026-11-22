@@ -32,8 +32,9 @@ Provider: `no.cantara.sagalog.postgres.PostgresSagaLogInitializer`.
 | `connection-pool.connection-timeout` | `30000` | Milliseconds to wait for a connection from the pool (default 30000, HikariCP's). |
 
 `initialize` checks the names, opens a HikariCP pool, creates the schema and the `Locks` table if missing (and
-migrates a `Locks` table made by 2.1.0 or earlier, see [Storage](#storage)), and returns the saga-log pool. Keep the
-pool size above the number of logs you will open (see [Connections](#connections)).
+migrates a `Locks` table made by 2.1.0 or earlier, see [Storage](#storage)), checks that the database gives the pool
+all of its connections (see [Connections](#connections)), and returns the saga-log pool. Keep the pool size above the
+number of logs you will open.
 
 ### Timeouts and TLS
 
@@ -131,9 +132,34 @@ a rolling upgrade a log taken over by an old process in that window is not detec
   belongs to that connection. `close()` (also called by `remove(logId)` and `shutdown()`) releases every advisory lock
   of the session (`pg_advisory_unlock_all()`), commits, and gives the connection back; if that fails, the connection is
   evicted instead, which ends the session and its locks. Set `connection-pool.max-size` above the number of logs
-  open at the same time (instance-local logs plus the logs of other instances being recovered). When the pool is used
-  up, opening a log waits once for the connection timeout and fails with `PostgresSagaLogException` whose message gives
-  the pool size and says to raise `connection-pool.max-size`.
+  open at the same time: every instance-local log the application has opened (a log stays open, with its connection,
+  after its owner releases it, until `remove(logId)` or `shutdown()`), plus the logs of other instances that are being
+  recovered at the same moment, plus one for the pool's own queries (`clusterWideLogIds`, `delete`). When the pool is
+  used up, opening a log waits once for the connection timeout and fails with `PostgresSagaLogException` whose message
+  gives the pool size and says to raise `connection-pool.max-size`; when the pool is short because the database refused
+  a connection, the message says so instead, since a larger pool would not help.
+- The pool holds all of its `connection-pool.max-size` connections while it runs (HikariCP's minimum idle is its
+  maximum); only when HikariCP replaces one (after its `maxLifetime`, or when one fails) is a server slot free for a
+  moment. `initialize` takes them all at once and gives them back, so that a pool that does not fit fails at start
+  rather than under load: HikariCP starts with one connection and logs its refusals only at DEBUG.
+  - When the database refuses a connection for lack of connections (SQLState `53300`: `max_connections` is used up,
+    `too many clients`, or the slots left are reserved for superusers, or a role's or the database's `CONNECTION LIMIT`
+    is reached), `initialize` closes the pool and throws `PostgresSagaLogException` at once. It does not wait for the
+    connection timeout, because while it waits it holds the server's last free connections and every other client of
+    the server is refused too.
+  - Any other failure to open a connection (a network blip, a failover, a slow login) may pass, so `initialize` keeps
+    waiting, and fails only when no connection has come for a whole `connection-pool.connection-timeout`. Each
+    connection gets the full timeout, so a large pool on a slow link has the time it needs.
+  - The message gives how many connections the pool got, the server's `max_connections`,
+    `superuser_reserved_connections`, `reserved_connections`, the client connections in use (counted also for a role
+    that cannot see other users' sessions in full), any `CONNECTION LIMIT`, the SQLState, and what to change.
+  - The check asks the server for the connections rather than estimating from `pg_stat_activity`, which other clients
+    change at any time. Processes on one server need room for all their pools together. When several start at once
+    and only some fit, each may fill part of its pool, be refused, and fail; an application that retries `initialize`
+    should wait a random time between tries, so that they do not keep colliding.
+  - Behind a connection pooler such as PgBouncer, the check proves only that the pooler accepted the connections; the
+    pooler opens its server connections later. (The saga log needs session pooling in any case: its advisory lock
+    belongs to the server session.)
 - Every operation runs in a transaction on that connection. When a statement or its commit fails because the
   connection is gone (SQLState class `08`, or `57P01` to `57P03`), the log reconnects as above and runs the operation
   once more. Any other failure (a timeout, a missing table, a constraint) is not retried. Failing to get a connection
