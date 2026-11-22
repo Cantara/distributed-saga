@@ -1,5 +1,7 @@
 package no.cantara.sagalog.postgres;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
@@ -190,6 +192,67 @@ public class PostgresSagaLogStartCheckTest {
         assertTrue(message.contains("5 client connections in use"), message);
         assertTrue(message.endsWith("(SQLState 53300)"), message);
         awaitClientConnections("start-app", 0);
+    }
+
+    @Test
+    public void thatTheMessageGivesTheRoleAndDatabaseConnectionLimits() throws Exception {
+        execute("CREATE ROLE sagalog_limited LOGIN CONNECTION LIMIT 2");
+        execute("CREATE DATABASE sagalog_limited_db CONNECTION LIMIT 5 OWNER sagalog_limited");
+        Map<String, String> configuration = configuration(3, "start-limited", "sagalog_limited", "sagalog_limited");
+        configuration.put("postgres.driver.database", "sagalog_limited_db");
+
+        PostgresSagaLogException e = expectThrows(PostgresSagaLogException.class,
+                () -> new PostgresSagaLogInitializer().initializePool(configuration));
+
+        String message = e.getMessage();
+        assertEquals(e.getSqlState(), "53300", message);
+        assertTrue(message.contains("gave the pool 2 of its 3 connections (connection-pool.max-size) and refused more"), message);
+        assertTrue(message.contains("too many connections for role"), message);
+        assertTrue(message.contains("role sagalog_limited has CONNECTION LIMIT 2, 2 in use"), message);
+        assertTrue(message.contains("database sagalog_limited_db has CONNECTION LIMIT 5, 2 in use"), message);
+        awaitClientConnections("start-limited", 0);
+    }
+
+    @Test
+    public void thatASlowDatabaseThatRefusesNothingFailsAfterTheConnectionTimeout() throws Exception {
+        // the first connection opens at once; every later one takes 3 s to set up, longer than the 1 s timeout
+        HikariConfig config = new HikariConfig();
+        config.setDataSourceClassName("org.postgresql.ds.PGSimpleDataSource");
+        config.addDataSourceProperty("serverName", "localhost");
+        config.addDataSourceProperty("portNumber", server.getPort());
+        config.addDataSourceProperty("user", "postgres");
+        config.addDataSourceProperty("databaseName", "postgres");
+        config.addDataSourceProperty("applicationName", "start-slow");
+        config.setConnectionInitSql("SELECT pg_sleep(CASE WHEN (SELECT count(*) FROM pg_stat_activity "
+                + "WHERE application_name = 'start-slow') > 1 THEN 3 ELSE 0 END)");
+        config.setMaximumPoolSize(3);
+        config.setConnectionTimeout(1000);
+        try (HikariDataSource hikari = new HikariDataSource(config)) {
+            long start = System.nanoTime();
+            PostgresSagaLogException e = expectThrows(PostgresSagaLogException.class,
+                    () -> PostgresSagaLogInitializer.checkThatThePoolGetsAllItsConnections(hikari));
+            long ms = (System.nanoTime() - start) / 1_000_000;
+
+            String message = e.getMessage();
+            assertTrue(ms >= 900, "failed after " + ms + " ms: before the connection timeout, though nothing was refused");
+            assertTrue(message.contains("gave the pool 1 of its 3 connections (connection-pool.max-size); no further "
+                    + "connection came within 1000 ms (connection-pool.connection-timeout)"), message);
+            assertTrue(!message.contains("refused more") && !message.contains("Last refusal"), message);
+            assertTrue(message.contains("max_connections " + MAX_CONNECTIONS), message);
+        } finally {
+            // a connection the pool was still setting up when it closed lives on until its pg_sleep ends
+            execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'start-slow'");
+        }
+    }
+
+    @Test
+    public void thatAFailureToReadTheServerStateKeepsTheRollbackFailure() throws Exception {
+        Connection closed = server.getPostgresDatabase().getConnection();
+        closed.close();
+
+        SQLException e = expectThrows(SQLException.class, () -> PostgresSagaLogInitializer.ServerConnections.read(closed));
+
+        assertEquals(e.getSuppressed().length, 1, "the rollback's failure, added to the query's");
     }
 
     @Test

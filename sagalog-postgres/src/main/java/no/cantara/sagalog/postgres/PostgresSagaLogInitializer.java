@@ -401,14 +401,21 @@ public class PostgresSagaLogInitializer implements SagaLogInitializer {
                 result = s.append('.').toString();
             } catch (SQLException | RuntimeException e) {
                 try {
-                    connection.rollback();
-                } catch (SQLException rollbackFailure) {
+                    endTransaction(connection);
+                } catch (SQLException | RuntimeException rollbackFailure) {
                     e.addSuppressed(rollbackFailure); // the query's failure is the one to report
                 }
                 throw e;
             }
-            connection.rollback();
+            endTransaction(connection);
             return result;
+        }
+
+        /* the pool's connections do not auto-commit; one that does has no transaction to end */
+        private static void endTransaction(Connection connection) throws SQLException {
+            if (!connection.getAutoCommit()) {
+                connection.rollback();
+            }
         }
     }
 
