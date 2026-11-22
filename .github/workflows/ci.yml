@@ -1,10 +1,10 @@
 name: CI
 
-# One job on JDK 25; the code is compiled with --release 17, the library's target (it is shared with other products,
-# so it stays on 17), which the JDK checks against Java 17's API. Every run: build and
+# Two jobs: JDK 17, the library's target and the oldest Java it runs on (it is shared with other products, so it stays
+# on 17), and JDK 27, the newest, which LDS runs on. The code is compiled with --release 17 on both. Every run: build and
 # every test, the fault matrix included; the PostgreSQL tests run an embedded PostgreSQL 18, so no Docker is needed.
-# Pushes to main and release tags, and pull requests from this repository, add coverage and the SonarCloud analysis
-# (not gating; pull requests from forks get no token). CI publishes nothing: releases are made on Jenkins.
+# Pushes to main and release tags, and pull requests from this repository, add coverage and the SonarCloud analysis on
+# the JDK 17 job (not gating; pull requests from forks get no token). CI publishes nothing: releases are made on Jenkins.
 on:
   push:
     branches: [main]
@@ -38,12 +38,17 @@ concurrency:
 
 jobs:
   build:
-    name: Build (JDK 25)
+    name: Build (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false  # a failure on one JDK must not hide the result on the other
+      matrix:
+        java: ['17', '27']
     env:
-      # Coverage and SonarCloud: pushes, and pull requests from this repository (a fork's gets no secrets).
-      ANALYSE: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+      # Coverage and SonarCloud, on the JDK 17 job only: pushes, and pull requests from this repository (a fork's gets
+      # no secrets).
+      ANALYSE: ${{ matrix.java == '17' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -53,7 +58,7 @@ jobs:
 
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880  # v6.3.0
         with:
-          java-version: '25'
+          java-version: ${{ matrix.java }}
           distribution: temurin
           cache: maven
 
