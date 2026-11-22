@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.4 (2026-11-22)
 
 ### Changed
 - **`sagalog-postgres` fails at start when the database has no room for the pool.** `initialize` takes all
