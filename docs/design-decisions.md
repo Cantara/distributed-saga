@@ -31,9 +31,7 @@ Recovery looks at the last entry of each node. `End` passes on the logged output
 Several things leave an effect done without its entry after it:
 - the process crashes;
 - the `End` write fails (the database is unreachable);
-- an executor's `shutdownNow` interrupts the step;
-- for an [asynchronous step](modules/saga-execution.md#asynchronous-adapters-experimental), the pool rejects its
-  continuation.
+- an executor's `shutdownNow` interrupts the step.
 
 In each case the saga fails or stops, and recovery runs the step again.
 
@@ -75,8 +73,7 @@ application, at the one place that can deduplicate: the step itself.
 ## 2. Execution: steps block, on the saga's own pool
 
 **Decision.** A step runs on a thread of the executor given to `SagaExecution`, and may block there for its I/O. This
-is the default and recommended model. `AsyncSagaAdapter` exists, but it is experimental, and it is only for steps
-whose I/O is truly non-blocking and waits a long time.
+is the only model: the library has no asynchronous steps.
 
 ### Why blocking is right
 
@@ -106,22 +103,23 @@ completed.
 Since 2.1.5 no walk waits for another. Each incoming node signals the join when it is done, and the last signal
 starts it (`SagaTraversal`). That fixed the cause for every step. Blocking was never the problem.
 
-### Asynchronous steps (experimental)
+### Asynchronous steps: built, tried and removed
 
-`AsyncSagaAdapter` returns a `CompletionStage` and holds no pool thread while the stage runs. The thread that
-completes the stage only submits the rest of the step to the pool. The log order and recovery are the same as for a
-synchronous step.
+An asynchronous adapter (`AsyncSagaAdapter`, returning a `CompletionStage`) was built during the 2.1.5 work and
+removed before release. It let a step hold no pool thread while its stage ran: the walk ended after `Start`, and the
+stage's completion submitted the rest of the step to the pool.
 
-It gains something only when no thread waits for the I/O at all, such as a non-blocking HTTP client or a producer's
-send callback, and when waits are long. A blocking call wrapped in a future gains nothing:
-- `CompletableFuture.runAsync(blockingCall, otherPool)` makes the same thread wait, on another pool, outside the saga
-  pool's bound;
-- the saga loses its back-pressure;
-- a continuation rejected by a full pool queue leaves a step done without its `End`, one more way for a step to run
-  twice.
+- **It gained nothing for the steps that needed it.** The one user, a transaction-log step, called a client whose
+  asynchronous publish was `CompletableFuture.runAsync(blockingPublish, unboundedPool)`. The same thread waited, on
+  another pool, outside the saga pool's thread cap. That is true of any blocking call wrapped in a future.
+- **It took away back-pressure.** The waits moved off the bounded pool.
+- **It added a way for a step to run twice.** A continuation rejected by a full pool queue left a step done without
+  its `End`.
+- **It gave the engine a second execution mode.** In that mode one node's visit spans threads, and every later change
+  to the traversal would have had to account for it.
 
-This was tried for a transaction-log step whose client wrapped its blocking JDBC publish in `runAsync` on an
-unbounded pool. The step went back to the synchronous adapter.
+It would only pay off for steps whose I/O is truly non-blocking and waits long, in a process with very many sagas in
+flight. No user has that case. The transaction-log step went back to the synchronous adapter.
 
 ## 3. The saga log is synchronous; there is no asynchronous saga log
 
@@ -159,8 +157,8 @@ The last three are `0` (no limit) by default. Size the saga pool for the sagas t
 ## When to revisit
 
 - **Section 2:** if an application needs thousands of sagas in flight in one process, each waiting on truly
-  non-blocking I/O, thread count would become the limit. That is the case `AsyncSagaAdapter` is for. Take it out of
-  experimental on such evidence.
+  non-blocking I/O, thread count would become the limit. Only such a measured case would justify asynchronous steps
+  again, and they would have to keep the guarantees of this page.
 - **Section 3:** if a saga-log backend appears whose write path is itself non-blocking end to end, and a measured
   load shows threads, not round trips, to be the limit. Neither holds today.
 - **Section 1:** does not change. Exactly-once effects belong in the steps.
