@@ -12,6 +12,13 @@ import java.util.stream.Stream;
  * One append-only saga log. A log is used by one owner at a time (see {@link SagaLogPool}), but the steps of one saga
  * execution run in parallel, so a provider must accept {@link #write} calls from several threads at once. Logs are
  * opened and closed by their pool.
+ * <p>
+ * The providers in this library run {@code write} and {@code truncate} on the calling thread and return a future that
+ * is already complete. The file and PostgreSQL providers do their I/O there, reads included, inside
+ * {@code synchronized} sections, so their calls block the caller for the I/O: do not call them from a thread that must
+ * not block (an event loop, a reactive scheduler). On JDK 21 to 23 a virtual thread that calls them pins its carrier
+ * thread for the I/O (JDK 24 removes this, JEP 491). The memory provider does no I/O; only its {@code write} takes a
+ * lock, briefly.
  */
 public interface SagaLog extends AutoCloseable {
 

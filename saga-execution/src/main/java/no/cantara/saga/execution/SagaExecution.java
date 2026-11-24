@@ -32,7 +32,9 @@ import java.util.function.Consumer;
  * branches makes it slower, not stuck. Size the pool for the sagas that run at the same time, and limit how many run
  * at once in the application. The pool's rejection policy must not run
  * tasks on the submitting thread ({@code ThreadPoolExecutor.CallerRunsPolicy}): such a walk is rejected and fails the
- * saga. A rejected walk fails the saga with the {@link java.util.concurrent.RejectedExecutionException}.
+ * saga. A rejected walk fails the saga with the {@link java.util.concurrent.RejectedExecutionException}. Nor may it
+ * discard tasks silently ({@code DiscardPolicy}, {@code DiscardOldestPolicy}) while the executor runs: a discarded walk
+ * is never ended, and its saga never completes (a walk discarded after shutdown is detected and fails the saga).
  */
 public class SagaExecution {
 
@@ -88,7 +90,10 @@ public class SagaExecution {
      * The {@code onComplete} consumer is called once, when the saga has completed: after the End entry is written
      * on success, after the rollback after an abort, or, after any other failure, once no walk of the saga can still
      * run an action or write to the saga log. It is called on the thread that completes the saga, normally a thread
-     * of the executor given to this {@code SagaExecution}. It may block; that holds the thread until it returns.
+     * of the executor given to this {@code SagaExecution}. It is called on the thread that called this method, before
+     * this method returns, when the saga fails before any walk ran (the executor rejected the first walk), and on the
+     * thread that cancels a walk the executor dropped ({@code shutdownNow}). It may block; that holds the thread until
+     * it returns.
      * <p>
      * The completion future of the returned {@link SagaHandoffControl} completes only after {@code onComplete}
      * has returned or thrown, so a caller waiting on it can rely on what the consumer has done. It completes:
