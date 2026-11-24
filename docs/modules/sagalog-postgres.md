@@ -80,7 +80,9 @@ path of the RDS CA bundle (`global-bundle.pem`).
     and an index on `(txid, entry_id)` for `readEntries(executionId)`, named `<table>_txid` (or `SAGALOG_txid_<hash>`
     when that would pass 63 bytes). Opening a log creates the index if it is missing, so tables made by earlier
     versions get it on their next open. On a large table, that first open waits for the index to be built, and
-    holds off writes to that log meanwhile.
+    holds off writes to that log meanwhile. Every open runs `CREATE INDEX IF NOT EXISTS`, which takes a `SHARE` lock
+    on the table for a moment even when the index exists, so an open waits behind a `VACUUM` (also autovacuum) or DDL
+    on that table.
 
 - Reads are `ORDER BY entry_id`, which is write order within a log. `readIncompleteSagas()` reads the whole table into
   memory, finished executions included, so truncate logs after their sagas finish.
@@ -123,8 +125,14 @@ So the next operation of the log, which finds its connection gone:
 3. If the lock cannot be had within 10 s, the operation fails with `SagaLogBusyException`; the next operation tries
    again.
 
-While it waits, the log's other operations wait too. A process on 2.1.0 or earlier does not write the token, so during
-a rolling upgrade a log taken over by an old process in that window is not detected.
+While it waits, the log's other operations wait too. Each operation that finds the connection gone makes its own
+attempt, which takes up to `connection-pool.connection-timeout` (30 s by default) to get a connection and 10 s for the
+lock. So with K operations queued on one log while the database is unreachable, the last can wait about
+K × (connection timeout + 10 s) before it fails; `close()` waits for the attempt in progress. A connection that is
+half open (the server is gone, but no reset arrives) is not noticed at all while `postgres.driver.socket-timeout`,
+`postgres.statement-timeout` and `postgres.lock-timeout` are `0`, their defaults: set them to bound how long an
+operation can hang. A process on 2.1.0 or earlier does not write the token, so during a rolling upgrade a log taken
+over by an old process in that window is not detected.
 
 ## Connections
 

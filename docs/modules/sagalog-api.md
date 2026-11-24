@@ -41,6 +41,12 @@ saga-log provider implements these interfaces; `saga-execution` uses only them.
 Entry data (`getJsonData()`) is any text, written by an adapter's serializer; every provider stores and returns it
 unchanged.
 
+**Every call blocks its caller.** The providers in this library (memory, file, PostgreSQL) do their work on the
+calling thread: `write` and `truncate` return a future that is already complete, and the reads return once the entries
+are read. Do not call a log from a thread that must not block, such as an event loop or a reactive scheduler. Their
+calls run inside `synchronized` sections, so on JDK 21 to 23 a virtual thread that calls them pins its carrier thread
+for the I/O (JDK 24 removes this, JEP 491). The saga engine calls the log on its pool's threads.
+
 Each provider has its own entry ids:
 
 | Provider | Entry id | Text form |
