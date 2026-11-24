@@ -150,12 +150,17 @@ class SagaTraversal {
         }
 
         /**
-         * Signals a node that one of the nodes it depends on has been visited.
+         * Signals a node that one of the nodes it depends on, the signaller, has been visited. The first signal gives
+         * the node its ancestors: the signaller's, and the signaller.
          *
          * @return true for the one signal that was the last the node waited for
          */
-        boolean signal(SagaNode node, Deque<SagaNode> signallerAncestors) {
-            ancestorsById.putIfAbsent(node.id, signallerAncestors);
+        boolean signal(SagaNode node, SagaNode signaller, Deque<SagaNode> signallerAncestors) {
+            ancestorsById.computeIfAbsent(node.id, id -> {
+                Deque<SagaNode> ancestors = new LinkedList<>(signallerAncestors);
+                ancestors.addLast(signaller);
+                return ancestors;
+            });
             AtomicInteger waiting = waitingById.computeIfAbsent(node.id, id -> new AtomicInteger(dependencies(node).size()));
             return waiting.decrementAndGet() == 0;
         }
@@ -315,9 +320,7 @@ class SagaTraversal {
          */
         List<SagaNode> started = new ArrayList<>();
         for (SagaNode dependent : graph.dependents(node)) {
-            Deque<SagaNode> dependentAncestors = new LinkedList<>(ancestors);
-            dependentAncestors.addLast(node);
-            if (graph.signal(dependent, dependentAncestors)) {
+            if (graph.signal(dependent, node, ancestors)) {
                 started.add(dependent);
             }
         }
