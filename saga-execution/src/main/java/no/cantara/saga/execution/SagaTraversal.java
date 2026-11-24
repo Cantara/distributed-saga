@@ -426,19 +426,26 @@ class SagaTraversal {
      */
     private void resumeWhenDone(Graph graph, SagaNode node, Deque<SagaNode> ancestors, Pending pending) {
         walks.started(); // the step counts as a walk; the walk that finishes it takes the count over
+        // the step, for SagaTraversalResult: done once the walk that finishes it is in the queue (or failed), so a
+        // wait for the walks never sees them all done while the step runs
+        SelectableFuture<List<String>> step = new SelectableFuture<>(Collections::emptyList);
+        graph.futureThreadWalk.add(step);
         try {
             pending.stage.whenComplete((value, failure) -> {
                 try {
                     submit(new Walk(graph, node, ancestors, () -> pending.continuation.apply(value, failure)));
+                    step.complete(Collections.emptyList());
                 } catch (Throwable rejected) {
                     // submit has failed the saga and ended the count; the node's visit fails with it
                     graph.running.remove(node.id);
                     graph.futureById.get(node.id).completeExceptionally(rejected);
+                    step.completeExceptionally(rejected);
                 }
             });
         } catch (Throwable t) { // a stage that refuses the callback
             graph.running.remove(node.id);
             graph.futureById.get(node.id).completeExceptionally(t);
+            step.completeExceptionally(t);
             walkFailed(t);
             walks.ended();
         }

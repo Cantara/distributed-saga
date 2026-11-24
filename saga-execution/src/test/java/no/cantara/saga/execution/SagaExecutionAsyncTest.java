@@ -41,6 +41,7 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.expectThrows;
 import static org.testng.Assert.fail;
 
 /**
@@ -171,6 +172,32 @@ public class SagaExecutionAsyncTest {
         assertTrue(threads.stream().noneMatch(t -> t.endsWith(":foreign")), "nothing ran on the foreign thread: " + threads);
         assertTrue(threads.contains("post a:saga-pool"), "a's postAction ran on the pool: " + threads);
         assertTrue(threads.contains("b:saga-pool"), "b ran on the pool: " + threads);
+    }
+
+    @Test
+    public void thatTheTraversalResultWaitsForAnAsyncStep() throws Exception {
+        Saga saga = Saga.start("result").linkTo("a")
+                .id("a").adapter("async").linkTo("b")
+                .id("b").adapter("sync").linkToEnd()
+                .end();
+        AdapterLoader adapters = new AdapterLoader()
+                .register(new Async("async", input -> onForeign("a"), null))
+                .register(new Adapter<>(String.class, "sync", (i, d) -> "b"));
+        SagaHandoffControl control = new SagaExecution(MemoryLogs.newLog(), pool, saga, adapters)
+                .executeSaga(UUID.randomUUID().toString(), "{}", false, r -> {
+                });
+        awaitState(control, s -> s.getRunningNodeIds().equals(Set.of("a")) && s.getWalks() == 1);
+
+        List<String> visited = new CopyOnWriteArrayList<>();
+        CompletableFuture<Void> waiter = CompletableFuture.runAsync(() -> control.getTraversalResult()
+                .waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(10, TimeUnit.SECONDS, w -> {
+                }, (node, output) -> visited.add(node.id)), foreign);
+        // while a runs, the wait goes on; without the step counted, it ended at once with "nodes were not walked"
+        expectThrows(TimeoutException.class, () -> waiter.get(200, TimeUnit.MILLISECONDS));
+
+        release.countDown();
+        waiter.get(10, TimeUnit.SECONDS);
+        assertEquals(Set.copyOf(visited), Set.of(Saga.ID_START, "a", "b", Saga.ID_END));
     }
 
     @Test
