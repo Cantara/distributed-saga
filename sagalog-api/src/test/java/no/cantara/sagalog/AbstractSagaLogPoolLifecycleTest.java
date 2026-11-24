@@ -277,6 +277,57 @@ public class AbstractSagaLogPoolLifecycleTest {
         }
     }
 
+    /**
+     * A log held by another process stays available, but behind the others: tryAcquire hands out the free logs instead
+     * of taking the held one again and again.
+     */
+    @Test
+    public void thatALogHeldElsewhereDoesNotKeepTheFreeLogsFromBeingAcquired() {
+        TestPool pool = new TestPool();
+        SagaLogId a = pool.registerInstanceLocalIdFor("a");
+        SagaLogId b = pool.registerInstanceLocalIdFor("b");
+        SagaLogId c = pool.registerInstanceLocalIdFor("c");
+        pool.connector = id -> {
+            if (id.equals(a)) {
+                throw new SagaLogBusyException("held by another process: " + id);
+            }
+            return new TestLog(id, null);
+        };
+        Set<SagaLogId> acquired = new java.util.LinkedHashSet<>();
+        int busy = 0;
+        for (int i = 0; i < 3; i++) {
+            try {
+                SagaLog log = pool.tryAcquire(new SagaLogOwner("owner-" + i));
+                if (log != null) {
+                    acquired.add(log.id());
+                }
+            } catch (SagaLogBusyException e) {
+                busy++;
+            }
+        }
+        assertEquals(acquired, Set.of(b, c), "both free logs are handed out within three attempts (" + busy + " busy)");
+        assertEquals(busy, 1, "the held log is tried once, then goes behind the others");
+        pool.shutdown();
+    }
+
+    @Test
+    public void thatALogHeldElsewhereDoesNotKeepTheFreeLogsFromBeingAcquiredWithATimeout() throws InterruptedException {
+        TestPool pool = new TestPool();
+        SagaLogId a = pool.registerInstanceLocalIdFor("a");
+        SagaLogId b = pool.registerInstanceLocalIdFor("b");
+        pool.connector = id -> {
+            if (id.equals(a)) {
+                throw new SagaLogBusyException("held by another process: " + id);
+            }
+            return new TestLog(id, null);
+        };
+        expectThrows(SagaLogBusyException.class, () -> pool.tryAcquire(new SagaLogOwner("first"), 1, TimeUnit.SECONDS));
+        SagaLog log = pool.tryAcquire(new SagaLogOwner("second"), 1, TimeUnit.SECONDS);
+        assertNotNull(log);
+        assertEquals(log.id(), b, "the free log is handed out next");
+        pool.shutdown();
+    }
+
     @Test
     public void thatAFailedConnectLeavesNoPlaceholderAndCanBeRetried() {
         TestPool pool = new TestPool();
