@@ -24,11 +24,13 @@ public final class SagaExecutionState {
      */
     public enum Phase {
         /**
-         * Visiting the nodes forward, from {@code S}.
+         * Visiting the nodes forward, from {@code S}. After an abort, the phase stays {@code FORWARD} until the forward
+         * walks still running (an action on another branch) have ended; no new node starts meanwhile.
          */
         FORWARD,
         /**
-         * Rolling back after an abort: visiting the nodes backward, from {@code E}, compensating them.
+         * Rolling back after an abort: reading the log's entries, then visiting the nodes backward, from {@code E},
+         * compensating them.
          */
         ROLLBACK,
         /**

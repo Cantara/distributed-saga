@@ -93,8 +93,10 @@ public class SagaExecutionStateTest {
                 .executeSaga(executionId, "{}", false, r -> {
                 });
 
-        // b's walk ends just after it signals j
-        SagaExecutionState state = awaitState(control, s -> s.getWaitingNodeIds().equals(Map.of("j", 1)) && s.getWalks() == 1);
+        // b's walk ends just after it signals j, and a's walk may still be on its way to a's visit; a then waits for the
+        // release, so the state holds still
+        SagaExecutionState state = awaitState(control, s -> s.getWaitingNodeIds().equals(Map.of("j", 1)) && s.getWalks() == 1
+                && s.getRunningNodeIds().equals(Set.of("a")));
         assertEquals(state.getExecutionId(), executionId);
         assertEquals(state.getPhase(), SagaExecutionState.Phase.FORWARD);
         assertEquals(state.getRunningNodeIds(), Set.of("a"), "a runs: " + state);

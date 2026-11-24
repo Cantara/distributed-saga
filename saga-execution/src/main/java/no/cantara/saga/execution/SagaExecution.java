@@ -251,10 +251,11 @@ public class SagaExecution {
          * read of the log's entries, fails the saga with that failure and the abort suppressed on it.
          */
         private void rollback(AbortSagaException abort) {
-            rollingBack = true;
-            Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId = sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId);
+            // the backward traversal is current before the phase says ROLLBACK, so a state never pairs them wrongly
             SagaTraversal backward = new SagaTraversal(executorService, saga, walks);
             current = backward;
+            rollingBack = true;
+            Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId = sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId);
             backward.backwardOnThisThread(ste -> {
                 visitBackward(ste, sagaLogEntriesBySagaNodeId, abort);
                 return null; // a backward visit has no output
