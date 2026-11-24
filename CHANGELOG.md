@@ -16,6 +16,13 @@
   the thread of its last incoming node instead of its first, and its `ancestors` are still those of the first.
 - `org.postgresql:postgresql` 42.7.15.
 
+### Added
+- **`SagaHandoffControl.getState()`: where an execution is.** It returns a `SagaExecutionState` snapshot with the phase
+  (`FORWARD`, `ROLLBACK`, `COMPLETED`), the nodes running, the nodes waiting for others (with how many signals each
+  still waits for), the nodes visited, the walks that may still run, and the first failure. A join no longer holds a
+  thread, so a saga that does not complete may not show in a thread dump; this shows it. It does not wait, and changes
+  nothing.
+
 ### Fixed
 - **A saga log held by another process no longer keeps the free logs from being acquired.** A registered log that
   failed to connect (`SagaLogBusyException`: another process holds its file lock or its PostgreSQL advisory lock) went
@@ -23,6 +30,10 @@
   free logs were never handed out while it was held. It now goes to the back, behind the other available logs, and
   stays available for a later attempt, as the Javadoc says: the `tryAcquire` that meets it still throws, once, and the
   next one hands out a free log.
+- **`SagaTraversalResult.waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited` honours its timeout.** It waited
+  without a bound while a walk ran, and held its monitor meanwhile, so a walk that hung made it, and every other caller,
+  wait for ever, against its Javadoc. It now throws `TimeoutRuntimeException` when the time is up, and a second caller
+  gives up in time too.
 
 ## 2.1.4 (2026-11-22)
 

@@ -49,6 +49,8 @@ class SagaTraversal {
     private final AtomicBoolean stopSignal = new AtomicBoolean(false);
     // walks submitted but not started; claimed by whoever stops the traversal, as they would do nothing
     private final Set<Walk> notStarted = ConcurrentHashMap.newKeySet();
+    // the traversal's state, once it has started; read by getState()
+    private volatile Graph graph;
 
     SagaTraversal(SelectableThreadPoolExecutor executorService, Saga saga) {
         this(executorService, saga, new SagaWalks(null, null));
@@ -89,6 +91,47 @@ class SagaTraversal {
         stopTraversal();
     }
 
+    /**
+     * @return the ids of the nodes whose visit has ended normally
+     */
+    Set<String> visitedNodeIds() {
+        Graph g = graph;
+        Set<String> visited = new java.util.HashSet<>();
+        if (g != null) {
+            g.futureById.forEach((id, future) -> {
+                if (future.isDone() && !future.isCompletedExceptionally()) {
+                    visited.add(id);
+                }
+            });
+        }
+        return visited;
+    }
+
+    /**
+     * @return the ids of the nodes being visited now
+     */
+    Set<String> runningNodeIds() {
+        Graph g = graph;
+        return g == null ? Set.of() : new java.util.HashSet<>(g.running);
+    }
+
+    /**
+     * @return for each node that has had some, but not all, of its signals: how many it still waits for
+     */
+    Map<String, Integer> waitingNodeIds() {
+        Graph g = graph;
+        Map<String, Integer> waiting = new LinkedHashMap<>();
+        if (g != null) {
+            g.waitingById.forEach((id, count) -> {
+                int left = count.get();
+                if (left > 0) {
+                    waiting.put(id, left);
+                }
+            });
+        }
+        return waiting;
+    }
+
     SagaTraversalResult forward(Function<SagaTraversalElement, Object> visit) {
         return traverse(true, saga.getStartNode(), visit, false);
     }
@@ -107,6 +150,7 @@ class SagaTraversal {
 
     private SagaTraversalResult traverse(boolean forward, SagaNode firstNode, Function<SagaTraversalElement, Object> visit, boolean inline) {
         Graph graph = new Graph(forward, visit);
+        this.graph = graph;
         Walk first = new Walk(graph, firstNode, new LinkedList<>());
         if (inline) {
             walks.started();
@@ -135,6 +179,8 @@ class SagaTraversal {
         // per node: the result of its visit, completed before the node signals the nodes that depend on it
         final ConcurrentHashMap<String, SelectableFuture<SelectableFuture<Object>>> futureById = new ConcurrentHashMap<>();
         final BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk = new LinkedBlockingQueue<>();
+        // the nodes being visited now
+        final Set<String> running = ConcurrentHashMap.newKeySet();
 
         Graph(boolean forward, Function<SagaTraversalElement, Object> visit) {
             this.forward = forward;
@@ -301,6 +347,7 @@ class SagaTraversal {
          */
         Map<SagaNode, Object> outputByNode = graph.outputsOfDependencies(node);
         SelectableFuture<SelectableFuture<Object>> futureResult = graph.futureById.computeIfAbsent(node.id, k -> new SelectableFuture<>(() -> null));
+        graph.running.add(node.id);
         try {
             Object result = graph.visit.apply(new SagaTraversalElement(outputByNode, ancestors, node));
             SelectableFuture<Object> selectableFuture = new SelectableFuture<>(() -> result);
@@ -309,6 +356,8 @@ class SagaTraversal {
         } catch (Throwable t) {
             futureResult.completeExceptionally(t);
             throw Utils.launder(t);
+        } finally {
+            graph.running.remove(node.id);
         }
 
         if (stopSignal.get()) {

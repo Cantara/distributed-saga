@@ -14,11 +14,12 @@ Package `no.cantara.saga.execution`:
 | Type | Purpose |
 |---|---|
 | `SagaExecution` | Binds a saga, a saga log, a thread pool and an adapter loader; `executeSaga(...)` starts one execution. |
-| `SagaHandoffControl` | Returned by `executeSaga`: the handoff future, the completion future, and the execution's inputs. |
+| `SagaHandoffControl` | Returned by `executeSaga`: the handoff future, the completion future, the execution's inputs, and `getState()`. |
+| `SagaExecutionState` | A snapshot of an execution, from `SagaHandoffControl.getState()`: its phase, the nodes running, and the nodes waiting for others. |
 | `SagaHandoffResult` | The result: `getExecutionId()`, `isSuccess()`, `isFailure()`, `getFailureCause()`. |
 | `SagaOnCompleteException` | The completion future's failure when the saga succeeded but `onComplete` threw. |
 | `SagaExecutionTraversalContext` | Given to the `preAction` and `postAction` callbacks. |
-| `SagaTraversalResult` | The forward traversal's walks; `waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(...)`, for tests. After a rollback it reports the nodes the stopped forward walks never reached as not walked. |
+| `SagaTraversalResult` | The forward traversal's walks; `waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(...)`, for tests. After a rollback it reports the nodes the stopped forward walks never reached as not walked. It throws `TimeoutRuntimeException` when the walks have not ended within its timeout. |
 
 Package `no.cantara.saga.execution.adapter`:
 
@@ -72,6 +73,24 @@ from other callers waiting on them. Wait on them, or on a copy (`future.copy()`)
 
 `onComplete` runs on the pool thread that finished the saga. It runs on the thread that called `executeSaga` only when
 the saga fails before any walk ran (its first walk was rejected), or on the thread that cancels a dropped walk.
+
+### Where an execution is
+
+A join holds no thread while it waits, so a saga that does not complete may not show in a thread dump.
+`control.getState()` returns a snapshot of the execution, from any thread, without waiting:
+
+| Field | Meaning |
+|---|---|
+| `getPhase()` | `FORWARD`, `ROLLBACK` (compensating after an abort), or `COMPLETED` (the completion future is done) |
+| `getRunningNodeIds()` | The nodes being visited now: an action or a compensating action, a log write for the node, its `preAction` or `postAction` |
+| `getWaitingNodeIds()` | Each node that some, but not all, of the nodes it depends on have signalled, with how many it still waits for |
+| `getVisitedNodeIds()` | The nodes visited in the current phase (backward, in a rollback) |
+| `getWalks()` | The walks that may still run: running, or queued on the pool |
+| `getFailure()` | The first failure, once recorded |
+
+A saga stuck in a step shows that step in `running`. A saga whose step is waiting for a pool thread shows its walk in
+`walks` but nothing running. The values are read one after another, not atomically, so they can be a moment apart; just
+after completion, the last node can still show as running.
 
 ### The pool
 
