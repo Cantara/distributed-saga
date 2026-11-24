@@ -163,7 +163,8 @@ Guaranteed:
 Not guaranteed:
 
 - Exactly-once execution. An action can run more than once, for example when recovery finds a node started but not
-  ended. Actions and compensating actions must be idempotent.
+  ended. Actions and compensating actions must be idempotent. Why this is the right choice:
+  [Design decisions](design-decisions.md#1-delivery-semantics-at-least-once).
 - Isolation. Other parties see the intermediate state while a saga runs.
 - Rollback for failures other than `AbortSagaException`, and timeouts. A compensating action that fails stops the
   rollback and leaves the saga for forward recovery.

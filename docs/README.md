@@ -15,6 +15,7 @@ These pages are for developers who use the libraries or work on them. To get sta
 | [Architecture](architecture.md) | The modules and how they depend on each other, Java modules (JPMS), threading, the life of one saga execution, and service loading of saga-log providers |
 | [Using the library](using.md) | A step-by-step guide: define a saga, write adapters, choose a saga log, run, wait, recover, handle errors |
 | [Known limitations](limitations.md) | Behaviour you must know about before you rely on the library in production |
+| [Design decisions](design-decisions.md) | Why actions run at least once, why steps block on the saga's own pool, and why the saga log is synchronous |
 | [Development](development.md) | Building, testing, project layout, conventions and releases |
 
 ### Modules
