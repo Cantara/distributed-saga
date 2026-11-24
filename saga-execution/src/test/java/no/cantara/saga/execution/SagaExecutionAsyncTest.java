@@ -393,39 +393,35 @@ public class SagaExecutionAsyncTest {
 
     @Test
     public void thatAContinuationRefusedOnTheCompletingThreadLeavesNoNodeRunning() {
-        // one thread and no queue: while the thread is busy, the continuation is rejected, and CallerRunsPolicy would
-        // run it on the thread that completed the stage; the engine refuses that, and the saga fails
+        // one thread and a queue of one: with the thread busy and the queue full, the continuation is rejected, and
+        // CallerRunsPolicy would run it on the thread that completed the stage; the engine refuses that, and the saga
+        // fails
         SelectableThreadPoolExecutor callerRuns = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS,
-                new java.util.concurrent.SynchronousQueue<>(), r -> new Thread(r, "saga-pool"),
+                new java.util.concurrent.ArrayBlockingQueue<>(1), r -> new Thread(r, "saga-pool"),
                 new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
         CountDownLatch busy = new CountDownLatch(1);
         CountDownLatch free = new CountDownLatch(1);
         try {
-            Saga asyncSaga = Saga.start("async").linkTo("a").id("a").adapter("async").linkToEnd().end();
-            Saga busySaga = Saga.start("busy").linkTo("x").id("x").adapter("busy").linkToEnd().end();
-            AdapterLoader adapters = new AdapterLoader()
-                    .register(new Async("async", input -> onForeign("a"), null))
-                    .register(new Adapter<>(String.class, "busy", (i, d) -> {
-                        busy.countDown();
-                        await(free);
-                        return "x";
-                    }));
-            SagaHandoffControl control = new SagaExecution(MemoryLogs.newLog(), callerRuns, asyncSaga, adapters)
+            Saga saga = Saga.start("async").linkTo("a").id("a").adapter("async").linkToEnd().end();
+            AdapterLoader adapters = new AdapterLoader().register(new Async("async", input -> onForeign("a"), null));
+            SagaHandoffControl control = new SagaExecution(MemoryLogs.newLog(), callerRuns, saga, adapters)
                     .executeSaga(UUID.randomUUID().toString(), "{}", false, r -> {
                     });
             awaitState(control, s -> s.getRunningNodeIds().equals(Set.of("a")) && s.getWalks() == 1);
-            SagaHandoffControl busyControl = new SagaExecution(MemoryLogs.newLog(), callerRuns, busySaga, adapters)
-                    .executeSaga(UUID.randomUUID().toString(), "{}", false, r -> {
-                    });
-            await(busy);
 
-            release.countDown(); // a's stage completes on the foreign thread while the only pool thread is busy
+            // the queue has room for one task, so these are never rejected, whether the thread is idle yet or not
+            callerRuns.execute(() -> {
+                busy.countDown();
+                await(free);
+            });
+            await(busy); // the thread is busy, and the queue empty again
+            callerRuns.execute(() -> {
+            }); // the queue is full
+
+            release.countDown(); // a's stage completes on the foreign thread: its continuation is rejected
             Throwable failure = outcome(control);
             assertTrue(failure instanceof RejectedExecutionException, "" + failure);
             assertEquals(control.getState().getRunningNodeIds(), Set.of(), "a is not left running: " + control.getState());
-
-            free.countDown();
-            assertEquals(outcome(busyControl), null);
         } finally {
             free.countDown();
             callerRuns.shutdownNow();
