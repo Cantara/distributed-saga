@@ -1,0 +1,81 @@
+name: Claude
+
+# Reviews pull requests, and does nothing else: no answers to @claude mentions, no issues, no pushes.
+#
+# The review is read only. It reads the diff and posts one review comment. Findings are fixed afterwards, outside
+# this workflow, and a comment on the pull request says what was fixed.
+#
+# Runs when a pull request is opened or reopened. Reopen a pull request to have it reviewed again. It deliberately
+# does not run on `synchronize`, which would review every push to every open pull request.
+#
+# Needs the secret CLAUDE_CODE_OAUTH_TOKEN, and the Claude GitHub app installed on this repository.
+on:
+  pull_request:
+    types: [opened, reopened]
+    # These are not code, so a pull request that touches only them is not reviewed (a review costs minutes).
+    # claude.yml itself is in the list: the action refuses to run a workflow that differs from the one on main, so
+    # a pull request that changes it can't be reviewed.
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'knowledge.yaml'
+      - '.github/workflows/sign-kcp.yml'
+      - '.github/workflows/claude.yml'
+      - 'renovate.json'
+      - '.gitignore'
+
+# A newer opened or reopened event cancels a review that is still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Pull requests from forks get no secrets, so they are not reviewed. Renovate's pull requests are reviewed.
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'claude[bot]'
+    runs-on: ubuntu-latest
+    # A review cut off by the timeout still reports success, with a half-filled comment, so the limit is generous.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b  # v1 (v1.0.289)
+        with:
+          # The model is named here, not inherited.
+          # `Agent` is denied so the review runs as one pass: a subagent still running when the main turn ends never
+          # reports, and nothing gets posted.
+          # The read-only gh and git commands are allowed explicitly, because the action refuses every Bash call by
+          # default.
+          claude_args: >-
+            --model opus
+            --disallowedTools "Agent"
+            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "Review this pull request to distributed-saga, Cantara's saga library (no.cantara.saga). Read knowledge.yaml and docs/modules/ for what each module is meant to do. The rules, and when you flag a violation name the rule: (1) the library targets Java 17 and is compiled with --release 17: no Java 21+ API or language feature (no virtual threads, sequenced collections, record patterns, pattern matching in switch); (2) it is a library embedded in applications: thread pools and executors, throttling, timeouts, retry policy, configuration and shutdown order belong to the application, so the library creates no hidden threads or pools, never uses the common ForkJoinPool, and adds no default policy; (3) the saga is its own subsystem: the caller's environment (its threads, interrupts, callbacks, executor policy) must not leak into the saga's execution flow, and a future or thread is exposed to a caller only when no thread safety leaks and the saga's safety is kept: log order, ownership of a saga log, completion exactly once; (4) the intended behaviour, as the Javadoc, docs/modules/ and CHANGELOG.md state it, does not change unless the pull request says so and records it in CHANGELOG.md with migration steps; public API, saga-log format, entry types and their semantics included; (5) durability: a saga-log entry that must be durable is written and joined before the effect it guards (Start before the action, End before the children, CompStart before a compensation), and recovery must still work for logs written by earlier versions; (6) a saga log is written by one process at a time: file locks and PostgreSQL advisory locks are only ever tried, never waited for, and ownership that is lost is detected and refused, not written through; (7) concurrency: every future completes exactly once on every path, Error included; failures keep their original exception, with later ones added as suppressed; interrupts are restored or propagated; no lock is held across foreign code; no wait without a bound or a documented reason; (8) SQL: values are bound parameters, identifiers come only from validated configuration and are quoted; no secrets in logs, exceptions or toString; (9) releases are made on Cantara's Jenkins to mvnrepo.cantara.no, never to Maven Central; GitHub Actions publish nothing; a release has no SNAPSHOT dependency; actions are pinned by commit SHA. Also check correctness, thread safety, resource handling, error handling, Javadoc on every public API element (threading, nulls, exceptions, lifetime), that README.md and docs/ still match the behaviour, and that new behaviour and every fixed defect come with tests that are deterministic (latches and futures, not sleep). The tests are not run here; the CI workflow runs them on JDK 17 and JDK 27. Mark each finding CRITICAL (must fix before merge) or SUGGESTION (non-blocking). Post one concise review with a file:line citation for each finding. If the pull request is clean, say so plainly, and do not manufacture issues. Finish the whole review in this run and post it before you end; never end the turn while any part of the review is deferred, running in the background or promised for later."
+          track_progress: true
+          allowed_bots: 'renovate[bot]'
+
+      # The job succeeds even when the review never posted: the action edits one placeholder comment in place, and a
+      # run that ends early leaves the comment's checklist unticked. So any unticked box in that comment fails the job.
+      - name: Fail when the review did not post
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          body=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq '[.[] | select(.user.login == "claude[bot]")] | last | .body // ""')
+          if printf '%s' "$body" | grep -q -- '- \[ \]'; then
+            echo "::error::the review comment still has unchecked boxes; the review did not post"
+            exit 1
+          fi
