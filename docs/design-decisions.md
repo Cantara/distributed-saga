@@ -7,7 +7,7 @@ Three choices define how the library behaves under failure and load:
 
 Each section below gives the decision, why it is right for durability, delivery semantics and resilience, what it
 asks of applications, and what was rejected. The decisions were taken on 2026-11-24, after the engine was reworked
-in 2.1.5 (joins no longer hold a thread; see the [CHANGELOG](../CHANGELOG.md)). They are judged on the code, not on
+in 2.2.0 (joins no longer hold a thread; see the [CHANGELOG](../CHANGELOG.md)). They are judged on the code, not on
 how easy or cheap an alternative would be.
 
 ## 1. Delivery semantics: at least once
@@ -93,19 +93,19 @@ The rule that matters is: never block a thread that other work needs to make pro
 request thread, a reactive scheduler, or a pool thread waiting for work queued behind it. The saga's own pool is the
 place where blocking belongs.
 
-### What was wrong before 2.1.5, and why async was not the fix
+### What was wrong before 2.2.0, and why async was not the fix
 
 Applications on 2.1.4 and earlier saw sagas stall with no timeout. The cause was a join: the walk of the first branch
 to be done held its pool thread while it waited for the others. With fewer threads than branches waiting at joins,
 the walks that would complete the joins stayed queued behind it, and the sagas, aborted ones included, never
 completed.
 
-Since 2.1.5 no walk waits for another. Each incoming node signals the join when it is done, and the last signal
+Since 2.2.0 no walk waits for another. Each incoming node signals the join when it is done, and the last signal
 starts it (`SagaTraversal`). That fixed the cause for every step. Blocking was never the problem.
 
 ### Asynchronous steps: built, tried and removed
 
-An asynchronous adapter (`AsyncSagaAdapter`, returning a `CompletionStage`) was built during the 2.1.5 work and
+An asynchronous adapter (`AsyncSagaAdapter`, returning a `CompletionStage`) was built during the 2.2.0 work and
 removed before release. It let a step hold no pool thread while its stage ran: the walk ended after `Start`, and the
 stage's completion submitted the rest of the step to the pool.
 

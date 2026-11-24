@@ -1,6 +1,8 @@
 # Changelog
 
-## 2.1.5 (unreleased)
+## 2.2.0 (2026-11-24)
+
+A minor release: it adds public API (`SagaHandoffControl.getState()`), and breaks none.
 
 ### Changed
 - **A join node holds no pool thread.** A node with several incoming nodes is now started by the walk of the last of
