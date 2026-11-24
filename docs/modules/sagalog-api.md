@@ -108,8 +108,10 @@ Ownership inside a pool is a lock per log: one owner at a time. A registered ins
 too. Across processes, a provider can also lock the log's storage when it connects (the PostgreSQL log with an
 advisory lock, the file log with an operating-system file lock; the memory log is local to the process).
 
-Taking a local log by ownership and releasing it puts it at the back of the `tryAcquire` queue. To read a log without
-changing which log `tryAcquire` returns next, use `connect(logId)`, which takes no ownership.
+Taking a local log by ownership and releasing it puts it at the back of the `tryAcquire` queue. A log whose connect
+fails, for example with `SagaLogBusyException` because another process holds it, also goes to the back: the
+`tryAcquire` that met it throws, and the next one hands out a free log. To read a log without changing which log
+`tryAcquire` returns next, use `connect(logId)`, which takes no ownership.
 
 A typical pattern for a server:
 

@@ -19,9 +19,10 @@
 ### Fixed
 - **A saga log held by another process no longer keeps the free logs from being acquired.** A registered log that
   failed to connect (`SagaLogBusyException`: another process holds its file lock or its PostgreSQL advisory lock) went
-  back to the front of the available logs, so every later `tryAcquire` took it again: the free logs were never handed
-  out while it was held, and the timed `tryAcquire` threw instead of waiting. It now goes to the back, behind the other
-  available logs, and stays available for a later attempt, as the Javadoc says.
+  back to the front of the available logs, so every later `tryAcquire`, timed or not, took it again and threw: the
+  free logs were never handed out while it was held. It now goes to the back, behind the other available logs, and
+  stays available for a later attempt, as the Javadoc says: the `tryAcquire` that meets it still throws, once, and the
+  next one hands out a free log.
 
 ## 2.1.4 (2026-11-22)
 
