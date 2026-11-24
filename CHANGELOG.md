@@ -26,6 +26,10 @@ A minor release: it adds public API (`SagaHandoffControl.getState()`), and break
   nothing.
 
 ### Fixed
+- **An `Error` from the executor's `submit` no longer leaves a saga open.** When `submit` threw an `Error` (not a
+  `RuntimeException`) for the first walk, which `executeSaga` submits on the caller's thread, the walk stayed counted:
+  the saga never completed and `onComplete` never ran. Now the saga fails with the `Error`, `onComplete` runs, and
+  then `executeSaga` rethrows it. (Inside a running walk, the walks that never started were already ended.)
 - **A saga-log pool never leaves an owned log in the `tryAcquire` queue.** The pool keeps a registered log in the
   queue exactly when nobody owns it. Two paths broke that. Registering a log that was already owned
   (`tryTakeOwnership` before `registerInstanceLocalIdFor`) queued it anyway. And `tryTakeOwnership` removed the log
