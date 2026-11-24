@@ -42,6 +42,14 @@ units:
     validated: "2026-05-07"
     triggers: [overview, install, usage, distributed-saga, getting started]
 
+  - id: design-decisions
+    path: docs/design-decisions.md
+    intent: "Why does the saga run actions at least once, why do steps block on the saga's own pool, and why is the saga log synchronous?"
+    scope: global
+    audience: [human, agent, developer]
+    validated: "2026-11-24"
+    triggers: [at least once, at most once, exactly once, idempotent, blocking, async, AsyncSagaAdapter, back-pressure, saga log, non-blocking, R2DBC, design decision]
+
 # Serving Endpoint Binding (KCP SPEC v0.26 §3.12): authoritative manifest URL
 # and authorized MCP representative. Ignored by pre-0.26 verifiers.
 serving:
