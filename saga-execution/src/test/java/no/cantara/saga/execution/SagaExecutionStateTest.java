@@ -130,8 +130,9 @@ public class SagaExecutionStateTest {
                 .executeSaga(UUID.randomUUID().toString(), "{}", false, r -> {
                 });
 
-        SagaExecutionState state = awaitState(control, s -> s.getRunningNodeIds().contains("a"));
-        assertEquals(state.getPhase(), SagaExecutionState.Phase.ROLLBACK, "" + state);
+        // a also runs forward, before b aborts: wait for its compensation
+        SagaExecutionState state = awaitState(control, s -> s.getPhase() == SagaExecutionState.Phase.ROLLBACK
+                && s.getRunningNodeIds().contains("a"));
         assertTrue(state.getVisitedNodeIds().containsAll(Set.of("E", "b")), "E and b were visited backward: " + state);
         assertNull(state.getFailure(), "an abort is not a failure while it rolls back: " + state);
 
