@@ -76,8 +76,9 @@ the saga fails before any walk ran (its first walk was rejected), or on the thre
 ### The pool
 
 The pool belongs to the application; the engine starts no threads. Every walk holds a pool thread while it runs an
-action, waits at a join, or waits for a saga-log write or read, none of which has a timeout in the engine. The
-application sizes the pool and limits how many sagas run at once. The rejection policy must not run tasks on the
+action or waits for a saga-log write or read, none of which has a timeout in the engine. A join holds no thread: the
+walk of the last node it depends on starts it, so a small pool makes sagas slower, not stuck. The application sizes
+the pool and limits how many sagas run at once. The rejection policy must not run tasks on the
 submitting thread: under `CallerRunsPolicy` a walk the pool would run on the submitting thread is rejected, and the
 saga fails with `RejectedExecutionException`. A rejected walk fails the saga through its futures; `executeSaga` does
 not throw it. After `shutdownNow()`, cancel the tasks it returns, so that sagas whose walks were all queued complete.

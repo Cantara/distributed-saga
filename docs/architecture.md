@@ -110,19 +110,21 @@ When the libraries are put in a shaded ("fat") jar, the service files must be me
 
 - A saga execution is a set of *walks*. One walk starts at `S`. When a node has several outgoing nodes, the walk
   submits a new walk to the pool for each extra branch, and continues down the last one itself.
-- A walk that reaches a node with several incoming nodes waits, on its pool thread, until the other incoming nodes
-  are done. Only one walk continues past a join; the others end there.
+- A node with several incoming nodes (a join) waits on no thread. Each incoming node, when done, signals it, and
+  the walk of the last one to be done continues into the join; the walks of the others end there. A join receives
+  the output of every incoming node.
 - Every saga-log write is joined before the walk continues.
 - Each action runs on the pool thread of the walk that reached it.
-- A walk that fails stops the traversal: walks waiting at a join return, and no walk starts a new node. A failed saga
-  completes once its last walk has ended.
+- A walk that fails stops the traversal: no walk starts a new node, and the nodes that depend on the failed one are
+  never started. A failed saga completes once its last walk has ended.
 - After an abort, the rollback starts once every forward walk has ended, on the thread of the last one; its first
   backward walk runs on that thread too.
 
-Because walks block pool threads while they wait (at joins, and on every saga-log write and read), the pool must
-have enough threads for the branches of every saga that runs at the same time, and the application limits how many
-sagas run at once. A `ThreadPoolExecutor` with an unbounded queue never grows beyond its core size, so set
-the core size for the expected parallelism. See [Known limitations](limitations.md#thread-starvation).
+Walks hold pool threads while they run actions and while they wait for saga-log writes and reads, so the pool's
+size is how many branches run at once. A join holds no thread, so a pool smaller than the branches makes sagas slower,
+not stuck. The application limits how many sagas run at once. A `ThreadPoolExecutor` with an unbounded queue never
+grows beyond its core size, so set the core size for the expected parallelism. See
+[Known limitations](limitations.md#thread-starvation).
 
 `onComplete` runs on the pool thread that completes the saga. Blocking in it holds that thread. The pool's rejection policy must not
 run tasks on the submitting thread; see [Known limitations](limitations.md#the-executor-rejection-shutdown-and-caller-runs).

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.5 (unreleased)
+
+### Changed
+- **A join node holds no pool thread.** A node with several incoming nodes is now started by the walk of the last of
+  them to be done: each incoming node signals it when its visit has ended, and the signal that was the last one it
+  waited for starts it, with every incoming node's output. Before, the walk of the first incoming node to be done
+  waited at the join on its pool thread for the others. With fewer pool threads than the branches waiting at joins
+  at the same time, the walks that would complete the joins stayed queued behind them, and the sagas deadlocked, with
+  no timeout, and a saga that had aborted never rolled back. Reproduced with two sagas `S -> {a, b} -> j -> E` on a
+  pool of two threads (`SagaExecutionJoinTest`), and in 21 of 25 random sagas on pools of one to three threads
+  (`SagaExecutionRandomGraphTest`, 300 cases in the build). A pool smaller than the branches now makes sagas slower,
+  not stuck. The log entries, their order, the rollback and recovery are unchanged; the traversal and its walks are
+  internal. Two things that only a thread could observe differ: a join's `preAction`, action and `postAction` run on
+  the thread of its last incoming node instead of its first, and its `ancestors` are still those of the first.
+- `org.postgresql:postgresql` 42.7.15.
+
 ## 2.1.4 (2026-11-22)
 
 ### Changed

@@ -4,8 +4,9 @@
 no dependencies
 
 A small extension of `java.util.concurrent` that adds *select* semantics to futures: wait for whichever of several
-futures completes first, as `select` does for sockets. `saga-execution` uses it to wait at join nodes. Applications use
-it to create the thread pool that `SagaExecution` needs.
+futures completes first, as `select` does for sockets. `saga-execution` runs its walks on the pool and its
+futures (up to 2.1.4 it also waited at join nodes with the selector). Applications use it to create the thread pool
+that `SagaExecution` needs.
 
 Note the group id: it differs from the other modules (`no.cantara.saga`).
 
