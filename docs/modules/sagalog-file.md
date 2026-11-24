@@ -47,7 +47,9 @@ SagaLogPool pool = initializer.initialize(Map.of(
 - **The file is read once, when the log is opened.** Opening decodes every entry and keeps them in memory; after
   that, `readIncompleteSagas`, `readEntries` and `truncate(id)` use the in-memory copy and do no file I/O. Only the
   open log can change its file (it holds the lock), so the copy stays exact; if a write or truncate fails, the log
-  reads the file again, and closes itself if that fails too. Memory follows the log's size; with the documented
+  reads the file again. If that fails too, the log refuses every later operation with `IllegalStateException`; close
+  it, which releases the file and the lock, and open it again. Up to 2.1.4 such a log marked itself closed without
+  releasing them, so it could not be opened again in the same process. Memory follows the log's size; with the documented
   pattern the log stays small. A corrupt file is reported when the log is opened.
 
 ## Failures
@@ -77,6 +79,13 @@ SagaLogPool pool = initializer.initialize(Map.of(
   process-wide registry refuses the second open first. The registry lives in the module's classes, so two copies of
   the module loaded by different class loaders in one JVM do not see each other's logs; do not open one log through
   both.
+- **An interrupt does not break the log.** The JDK closes a file channel when the thread using it is interrupted, and
+  closing the lock file's channel releases the lock. So `write` and `truncate` set a pending interrupt aside while
+  they use the files, and restore it before they return: on an interrupted thread they complete as on any other, and
+  the thread stays interrupted. If the lock is lost all the same (an interrupt that arrives during the I/O), the log
+  refuses every later operation with `SagaLogBusyException`, so it never writes a file another process may have opened
+  since; close it and open it again. Up to 2.1.4, a truncate that emptied the log on an interrupted thread released the
+  lock and left the log writing without it.
 - **`delete` takes the lock.** `delete` takes the log's lock, deletes the log file while holding it, then releases it.
   It fails with `SagaLogBusyException` when another process, or an open log or another pool in this process, holds the
   log (as the PostgreSQL log does). The lock file stays: every process always locks the same file, so a delete can't
