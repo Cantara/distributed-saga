@@ -5,6 +5,8 @@ import no.cantara.saga.api.Saga;
 import no.cantara.saga.execution.adapter.AdapterLoader;
 import no.cantara.sagalog.SagaLog;
 
+import java.util.function.Supplier;
+
 /**
  * Returned by {@link SagaExecution#executeSaga}: the execution's handoff and completion futures, and its inputs.
  * <p>
@@ -21,8 +23,9 @@ public class SagaHandoffControl {
     private final SagaTraversalResult traversalResult;
     private final SelectableFuture<SagaHandoffResult> handoffFuture;
     private final SelectableFuture<SagaHandoffResult> completionFuture;
+    private final Supplier<SagaExecutionState> state;
 
-    SagaHandoffControl(Object sagaInput, String executionId, Saga saga, SagaLog sagaLog, AdapterLoader adapterLoader, SagaTraversalResult traversalResult, SelectableFuture<SagaHandoffResult> handoffFuture, SelectableFuture<SagaHandoffResult> completionFuture) {
+    SagaHandoffControl(Object sagaInput, String executionId, Saga saga, SagaLog sagaLog, AdapterLoader adapterLoader, SagaTraversalResult traversalResult, SelectableFuture<SagaHandoffResult> handoffFuture, SelectableFuture<SagaHandoffResult> completionFuture, Supplier<SagaExecutionState> state) {
         this.sagaInput = sagaInput;
         this.executionId = executionId;
         this.saga = saga;
@@ -31,6 +34,18 @@ public class SagaHandoffControl {
         this.traversalResult = traversalResult;
         this.handoffFuture = handoffFuture;
         this.completionFuture = completionFuture;
+        this.state = state;
+    }
+
+    /**
+     * A snapshot of the execution: its phase, the nodes running, and the nodes waiting for others. Use it to see why a
+     * saga has not completed; see {@link SagaExecutionState}. Safe to call from any thread, at any time; it does not
+     * wait and changes nothing.
+     *
+     * @return the execution's state now
+     */
+    public SagaExecutionState getState() {
+        return state.get();
     }
 
     /**

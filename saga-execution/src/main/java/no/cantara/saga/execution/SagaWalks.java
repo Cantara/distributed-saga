@@ -75,6 +75,20 @@ final class SagaWalks {
     }
 
     /**
+     * @return the first failure recorded, or null
+     */
+    Throwable failure() {
+        return failure.get();
+    }
+
+    /**
+     * @return the walks counted now
+     */
+    int live() {
+        return live.get();
+    }
+
+    /**
      * Registers the task to run once no walk is left and no failure was recorded. Called by a counted walk, so the
      * count cannot reach zero before the task is registered.
      */

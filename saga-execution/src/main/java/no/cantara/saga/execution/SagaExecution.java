@@ -128,7 +128,8 @@ public class SagaExecution {
                 preAction, postAction, handoffFuture, traversalCompletionFuture);
         traversalCompletionFuture.whenComplete((r, t) -> runOnCompleteThenComplete(executionId, onComplete, r, attachAbort(t, execution.firstAbort.get()), completionFuture));
         SagaTraversalResult traversalResult = execution.forward.forward(execution::visitForward);
-        return new SagaHandoffControl(sagaInput, executionId, saga, sagaLog, adapterLoader, traversalResult, handoffFuture, completionFuture);
+        return new SagaHandoffControl(sagaInput, executionId, saga, sagaLog, adapterLoader, traversalResult, handoffFuture, completionFuture,
+                () -> execution.state(completionFuture));
     }
 
     /**
@@ -147,6 +148,9 @@ public class SagaExecution {
         final SagaTraversal forward;
         // the first abort, so that a saga that fails for another reason at the same time still reports it
         final AtomicReference<AbortSagaException> firstAbort = new AtomicReference<>();
+        // the traversal running now: the forward one, then the rollback's; read by state()
+        volatile SagaTraversal current;
+        volatile boolean rollingBack;
 
         Execution(String executionId, Object sagaInput, boolean recovery, Map<String, List<SagaLogEntry>> recoveryEntriesByNodeId,
                   Consumer<SagaExecutionTraversalContext> preAction, Consumer<SagaExecutionTraversalContext> postAction,
@@ -161,6 +165,19 @@ public class SagaExecution {
             this.completionFuture = completionFuture;
             this.walks = new SagaWalks(handoffFuture, completionFuture);
             this.forward = new SagaTraversal(executorService, saga, walks);
+            this.current = forward;
+        }
+
+        /**
+         * A snapshot of the execution, for {@link SagaHandoffControl#getState()}.
+         */
+        SagaExecutionState state(SelectableFuture<SagaHandoffResult> callersCompletionFuture) {
+            SagaTraversal traversal = current;
+            SagaExecutionState.Phase phase = callersCompletionFuture.isDone() ? SagaExecutionState.Phase.COMPLETED
+                    : rollingBack ? SagaExecutionState.Phase.ROLLBACK
+                    : SagaExecutionState.Phase.FORWARD;
+            return new SagaExecutionState(executionId, phase, traversal.visitedNodeIds(), traversal.runningNodeIds(),
+                    traversal.waitingNodeIds(), walks.live(), walks.failure());
         }
 
         Object visitForward(SagaTraversalElement ste) {
@@ -234,8 +251,11 @@ public class SagaExecution {
          * read of the log's entries, fails the saga with that failure and the abort suppressed on it.
          */
         private void rollback(AbortSagaException abort) {
+            rollingBack = true;
             Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId = sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId);
-            new SagaTraversal(executorService, saga, walks).backwardOnThisThread(ste -> {
+            SagaTraversal backward = new SagaTraversal(executorService, saga, walks);
+            current = backward;
+            backward.backwardOnThisThread(ste -> {
                 visitBackward(ste, sagaLogEntriesBySagaNodeId, abort);
                 return null; // a backward visit has no output
             });

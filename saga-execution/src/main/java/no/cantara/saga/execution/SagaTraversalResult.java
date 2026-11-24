@@ -41,6 +41,8 @@ public class SagaTraversalResult {
     // guards completedThreadWalks; taken with the caller's timeout, so a second caller gives up in time too
     private final ReentrantLock lock = new ReentrantLock();
     private Collection<SelectableFuture<List<String>>> completedThreadWalks;
+    // every walk taken off the queue so far, kept across callers: a caller that times out must not lose them
+    private final List<SelectableFuture<List<String>>> knownThreadWalks = new ArrayList<>();
 
     SagaTraversalResult(Saga saga, BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk, ConcurrentHashMap<String, SelectableFuture<SelectableFuture<Object>>> visitFutureById) {
         this.saga = saga;
@@ -145,8 +147,11 @@ public class SagaTraversalResult {
             }
 
             FutureSelector<List<String>, Object> walkSelector = new FutureSelector<>();
-            Collection<SelectableFuture<List<String>>> result = new ArrayList<>(drainAllAvailableWalkFuturesAndAddtoSelector(walkSelector));
-            if (result.isEmpty()) {
+            for (SelectableFuture<List<String>> known : knownThreadWalks) {
+                walkSelector.add(known, null);
+            }
+            drainAllAvailableWalkFuturesAndAddtoSelector(walkSelector);
+            if (knownThreadWalks.isEmpty()) {
                 throw new IllegalStateException("No traversal walk futures detected: the first walk was not submitted");
             }
 
@@ -164,23 +169,27 @@ public class SagaTraversalResult {
                     throw launder(e);
                 }
                 // potentially more walks available now that we have waited on the selected walk to complete
-                result.addAll(drainAllAvailableWalkFuturesAndAddtoSelector(walkSelector));
+                drainAllAvailableWalkFuturesAndAddtoSelector(walkSelector);
             }
 
-            completedThreadWalks = result;
-            return result;
+            completedThreadWalks = new ArrayList<>(knownThreadWalks);
+            return completedThreadWalks;
         } finally {
             lock.unlock();
         }
     }
 
-    private ArrayList<SelectableFuture<List<String>>> drainAllAvailableWalkFuturesAndAddtoSelector(FutureSelector<List<String>, Object> selector) {
+    /**
+     * Takes the walks submitted since the last call off the queue, keeps them, and adds them to the selector. Called
+     * with the lock held.
+     */
+    private void drainAllAvailableWalkFuturesAndAddtoSelector(FutureSelector<List<String>, Object> selector) {
         ArrayList<SelectableFuture<List<String>>> futureWalks = new ArrayList<>();
         futureThreadWalk.drainTo(futureWalks);
+        knownThreadWalks.addAll(futureWalks);
         for (SelectableFuture<List<String>> futureWalk : futureWalks) {
             selector.add(futureWalk, null);
         }
-        return futureWalks;
     }
 
     private FutureSelector<Object, SagaNode> getVisitFutureSelector() {
