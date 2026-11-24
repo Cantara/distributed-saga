@@ -202,9 +202,12 @@ What the engine does, and promises:
 - Compensations work the same way: `CompStart` before `executeCompensatingActionAsync`, `Comp` after its stage.
 - `preAction` runs on the pool thread that starts the step; `postAction` on the pool thread that finishes it, which
   may be another one.
-- If the pool rejects the rest of the node (it is shut down), the saga fails with `RejectedExecutionException`, and
-  `End` is not written: recovery runs the step again. Only then can `onComplete` run on the thread that completed the
-  stage, since no pool thread is left.
+- If the pool rejects the rest of the node (it is shut down, or its queue is bounded and full), the saga fails with
+  `RejectedExecutionException`, as any failure does, and `End` is not written although the step's work is done:
+  recovery finds the node started but not ended, and runs the step again. A synchronous step
+  cannot end this way, since its walk is rejected before it starts. So with asynchronous steps, give the pool a queue
+  that does not reject while it runs (an unbounded one, as the examples use). Only after such a rejection can
+  `onComplete` run on the thread that completed the stage.
 
 ## Behaviour to know
 

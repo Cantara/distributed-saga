@@ -42,7 +42,7 @@ import java.util.function.Supplier;
  * from then on. The thread that completes the stage only submits a new walk to the pool, which takes over that count,
  * runs the rest of the visit and goes on from there. So the thread that completes the stage never ends a count, and
  * never finds the saga idle: the rollback, or the completion of a failed saga, never runs on it (unless the pool
- * rejects the new walk: it is shut down). That walk is never dropped when the traversal stops, so a step that ran is
+ * rejects the new walk: it is shut down, or its queue is bounded and full). That walk is never dropped when the traversal stops, so a step that ran is
  * always finished (its End entry written), as a synchronous step is.
  * <p>
  * Every walk is counted in the execution's {@link SagaWalks} from just before it is submitted until it has ended or
@@ -266,7 +266,7 @@ class SagaTraversal {
         SelectableFuture<List<String>> future;
         try {
             future = executorService.submit(walk);
-        } catch (RuntimeException e) {
+        } catch (Throwable e) { // a rejection, or an Error: the walk never runs, so its count ends here
             if (walk.claim()) {
                 notStarted.remove(walk);
                 walkFailed(e);
@@ -282,6 +282,7 @@ class SagaTraversal {
             notStarted.remove(walk);
             RejectedExecutionException rejected = new RejectedExecutionException("a walk of saga " + saga.name
                     + " at node " + walk.node.id + " was discarded: the executor is shut down");
+            walk.notRun(rejected);
             walkFailed(rejected);
             walks.ended();
             throw rejected;
@@ -290,6 +291,7 @@ class SagaTraversal {
         future.whenComplete((result, failure) -> {
             if (failure != null && walk.claim()) {
                 notStarted.remove(walk);
+                walk.notRun(failure);
                 walkFailed(failure);
                 walks.ended();
             }
@@ -324,6 +326,17 @@ class SagaTraversal {
             return CLAIMED.compareAndSet(this, 0, 1);
         }
 
+        /**
+         * The walk ends without having run. A walk that would finish an asynchronous step leaves the step's node
+         * running and its visit future open: the node's visit fails with the reason.
+         */
+        void notRun(Throwable reason) {
+            if (resume != null) {
+                graph.running.remove(node.id);
+                graph.futureById.get(node.id).completeExceptionally(reason);
+            }
+        }
+
         @Override
         public List<String> call() {
             if (!claim()) {
@@ -335,6 +348,7 @@ class SagaTraversal {
                         + " at node " + node.id + " was to run on the thread that submitted it; the executor's "
                         + "rejection policy must not run tasks on the submitting thread");
                 try {
+                    notRun(rejected);
                     walkFailed(rejected);
                 } finally {
                     walks.ended();

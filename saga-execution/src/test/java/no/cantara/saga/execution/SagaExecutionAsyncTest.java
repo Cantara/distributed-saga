@@ -189,10 +189,15 @@ public class SagaExecutionAsyncTest {
         awaitState(control, s -> s.getRunningNodeIds().equals(Set.of("a")) && s.getWalks() == 1);
 
         List<String> visited = new CopyOnWriteArrayList<>();
-        CompletableFuture<Void> waiter = CompletableFuture.runAsync(() -> control.getTraversalResult()
-                .waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(10, TimeUnit.SECONDS, w -> {
-                }, (node, output) -> visited.add(node.id)), foreign);
+        CountDownLatch waiting = new CountDownLatch(1);
+        CompletableFuture<Void> waiter = CompletableFuture.runAsync(() -> {
+            waiting.countDown();
+            control.getTraversalResult().waitForCompletionAndCheckThatAllNodesWereWalkedAndVisited(10, TimeUnit.SECONDS, w -> {
+            }, (node, output) -> visited.add(node.id));
+        }, foreign);
+        await(waiting);
         // while a runs, the wait goes on; without the step counted, it ended at once with "nodes were not walked"
+        // (in well under 200 ms once the waiter runs, which it does now)
         expectThrows(TimeoutException.class, () -> waiter.get(200, TimeUnit.MILLISECONDS));
 
         release.countDown();
@@ -326,6 +331,105 @@ public class SagaExecutionAsyncTest {
         assertEquals(compensations, List.of("b-output"), "b ended before the rollback, which compensated it with its output");
         assertEquals(entryTypes(log, executionId, "b"), List.of(SagaLogEntryType.Start, SagaLogEntryType.End,
                 SagaLogEntryType.CompStart, SagaLogEntryType.Comp));
+    }
+
+    @Test
+    public void thatAnAsyncStepRunningWhenTheSagaFailsStillWritesEnd() {
+        // the walk of S continues with its last dependent, a, inline, and queues b: on one thread, a starts first
+        Saga saga = Saga.start("fork").linkTo("b", "a")
+                .id("a").adapter("async").linkToEnd()
+                .id("b").adapter("fails").linkToEnd()
+                .end();
+        CountDownLatch aStarted = new CountDownLatch(1);
+        IllegalStateException bFailed = new IllegalStateException("b failed");
+        AdapterLoader adapters = new AdapterLoader()
+                .register(new Async("async", input -> {
+                    aStarted.countDown();
+                    return onForeign("a-output");
+                }, null))
+                .register(new Adapter<>(String.class, "fails", (i, d) -> {
+                    await(aStarted);
+                    throw bFailed;
+                }));
+        SagaLog log = MemoryLogs.newLog();
+        String executionId = UUID.randomUUID().toString();
+        SagaHandoffControl control = new SagaExecution(log, pool, saga, adapters)
+                .executeSaga(executionId, "{}", false, r -> {
+                });
+        awaitState(control, s -> s.getFailure() != null && s.getRunningNodeIds().equals(Set.of("a")));
+        assertFalse(control.getCompletionFuture().isDone(), "the failed saga waits for a");
+
+        release.countDown();
+        assertSame(outcome(control), bFailed);
+        assertEquals(entryTypes(log, executionId, "a"), List.of(SagaLogEntryType.Start, SagaLogEntryType.End),
+                "a's work was done, so its End is written although the saga had stopped");
+    }
+
+    @Test
+    public void thatAnAsyncCompensationThatFailsFailsTheSagaWithoutComp() {
+        Saga saga = Saga.start("comp-fails").linkTo("a")
+                .id("a").adapter("compensation-fails").linkTo("b")
+                .id("b").adapter("aborts").linkToEnd()
+                .end();
+        IllegalStateException compensationFailed = new IllegalStateException("compensation failed");
+        AdapterLoader adapters = new AdapterLoader()
+                .register(new Async("compensation-fails", input -> CompletableFuture.completedFuture("a"),
+                        output -> CompletableFuture.supplyAsync(() -> {
+                            throw compensationFailed;
+                        }, foreign)))
+                .register(new Adapter<>(String.class, "aborts", (i, d) -> {
+                    throw new AbortSagaException("abort at b");
+                }));
+        SagaLog log = MemoryLogs.newLog();
+        String executionId = UUID.randomUUID().toString();
+        SagaHandoffControl control = new SagaExecution(log, pool, saga, adapters)
+                .executeSaga(executionId, "{}", false, r -> {
+                });
+        Throwable failure = outcome(control);
+        assertSame(failure, compensationFailed, "the saga fails with the compensation's failure: " + failure);
+        assertEquals(entryTypes(log, executionId, "a"), List.of(SagaLogEntryType.Start, SagaLogEntryType.End,
+                SagaLogEntryType.CompStart), "no Comp: recovery compensates a again");
+    }
+
+    @Test
+    public void thatAContinuationRefusedOnTheCompletingThreadLeavesNoNodeRunning() {
+        // one thread and no queue: while the thread is busy, the continuation is rejected, and CallerRunsPolicy would
+        // run it on the thread that completed the stage; the engine refuses that, and the saga fails
+        SelectableThreadPoolExecutor callerRuns = new SelectableThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS,
+                new java.util.concurrent.SynchronousQueue<>(), r -> new Thread(r, "saga-pool"),
+                new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+        CountDownLatch busy = new CountDownLatch(1);
+        CountDownLatch free = new CountDownLatch(1);
+        try {
+            Saga asyncSaga = Saga.start("async").linkTo("a").id("a").adapter("async").linkToEnd().end();
+            Saga busySaga = Saga.start("busy").linkTo("x").id("x").adapter("busy").linkToEnd().end();
+            AdapterLoader adapters = new AdapterLoader()
+                    .register(new Async("async", input -> onForeign("a"), null))
+                    .register(new Adapter<>(String.class, "busy", (i, d) -> {
+                        busy.countDown();
+                        await(free);
+                        return "x";
+                    }));
+            SagaHandoffControl control = new SagaExecution(MemoryLogs.newLog(), callerRuns, asyncSaga, adapters)
+                    .executeSaga(UUID.randomUUID().toString(), "{}", false, r -> {
+                    });
+            awaitState(control, s -> s.getRunningNodeIds().equals(Set.of("a")) && s.getWalks() == 1);
+            SagaHandoffControl busyControl = new SagaExecution(MemoryLogs.newLog(), callerRuns, busySaga, adapters)
+                    .executeSaga(UUID.randomUUID().toString(), "{}", false, r -> {
+                    });
+            await(busy);
+
+            release.countDown(); // a's stage completes on the foreign thread while the only pool thread is busy
+            Throwable failure = outcome(control);
+            assertTrue(failure instanceof RejectedExecutionException, "" + failure);
+            assertEquals(control.getState().getRunningNodeIds(), Set.of(), "a is not left running: " + control.getState());
+
+            free.countDown();
+            assertEquals(outcome(busyControl), null);
+        } finally {
+            free.countDown();
+            callerRuns.shutdownNow();
+        }
     }
 
     @Test
