@@ -72,7 +72,7 @@ application, at the one place that can deduplicate: the step itself.
 - **Consider that a rerun is late.** Recovery may run an old saga's step after newer changes to the same data. A step
   that can be reordered this way needs a version or a lock.
 
-## 2. Execution: steps block, on the saga's own bounded pool
+## 2. Execution: steps block, on the saga's own pool
 
 **Decision.** A step runs on a thread of the executor given to `SagaExecution`, and may block there for its I/O. This
 is the default and recommended model. `AsyncSagaAdapter` exists, but it is experimental, and it is only for steps
@@ -82,9 +82,10 @@ whose I/O is truly non-blocking and waits a long time.
 
 - **It is plain.** One step runs on one thread from `Start` to `End`, so the order of log writes, actions and callbacks
   can be read straight from the code.
-- **It pushes back on load.** The pool is bounded and belongs to the application. When a downstream system slows
-  down, its threads fill up and new sagas are rejected at once. The application sees the overload where it starts
-  sagas, instead of work piling up out of sight.
+- **It pushes back on load.** The pool belongs to the application, and its threads cap how many steps run at once.
+  When a downstream system slows down, the sagas slow down with it, instead of piling up more work on that system.
+  With a bounded queue (the application's choice), new sagas are also rejected at once, so the application sees the
+  overload where it starts sagas.
 - **Durability needs a wait anyway.** A step must not start before the entries ahead of it are durable, so some thread
   waits for each commit. Blocking makes that wait explicit and bounded by the pool.
 - **It adds no failure windows.** A rejected walk is always a node whose `Start` was never written: nothing has run.
@@ -134,8 +135,9 @@ continues on the write's future plus a provider on a non-blocking PostgreSQL dri
   log's `LogSession.run` is `synchronized`, and the file log serialises on its queue file. A log's throughput is set
   by the database's round trips, not by threads. More logs give more throughput, with either model.
 - **It would remove back-pressure when it matters most.** In a database outage, sagas cannot make progress either
-  way. A blocking log fills the bounded pool, and new sagas are rejected. An asynchronous log would keep admitting
-  sagas, piling up pending writes with no bound unless one were built by hand.
+  way. A blocking log holds the pool's threads, which caps the sagas in progress (and with a bounded queue, rejects
+  new ones). An asynchronous log would free the threads and keep admitting sagas, piling up pending writes with no
+  bound unless one were built by hand.
 - **It would put the most critical protocol in two implementations.** The PostgreSQL log's durability rests on
   several pieces of `LogSession`: the advisory lock, the ownership token in `Locks`, the reconnect that takes the lock
   again and checks the token, and the retry of a commit whose reply was lost. A second, asynchronous copy of that
