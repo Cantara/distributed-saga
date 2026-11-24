@@ -80,8 +80,8 @@ whose I/O is truly non-blocking and waits a long time.
 
 ### Why blocking is right
 
-- **It is plain.** One step runs on one thread from `Start` to `End`, so the order of log writes, actions and callbacks
-  can be read straight from the code.
+- **It is plain.** One step runs on one thread from `Start` to `End`, so the order of log writes, actions and
+  callbacks can be read straight from the code.
 - **It pushes back on load.** The pool belongs to the application, and its threads cap how many steps run at once.
   When a downstream system slows down, the sagas slow down with it, instead of piling up more work on that system.
   With a bounded queue (the application's choice), new sagas are also rejected at once, so the application sees the
