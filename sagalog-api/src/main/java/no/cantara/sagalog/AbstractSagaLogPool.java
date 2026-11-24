@@ -319,19 +319,7 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
         if (!semaphore.tryAcquire()) {
             return null; // lock unavailable
         }
-        SagaLog sagaLog = null;
-        try {
-            if (semaphore.availablePermits() > 0) {
-                throw new IllegalStateException("More than one permit available. Most likely the saga-log was released when no ownership or lock/permit is held.");
-            }
-            sagaLog = doAssignPoolLocalOwnership(owner, logId);
-            removeAvailable(logId);
-            return sagaLog;
-        } finally {
-            if (sagaLog == null) {
-                exclusiveLockByLogId.get(logId).release();
-            }
-        }
+        return ownWithPermit(owner, logId, semaphore, "More than one permit available. Most likely the saga-log was released when no ownership or lock/permit is held.");
     }
 
     /**
@@ -346,17 +334,25 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
         if (!semaphore.tryAcquire(timeout, unit)) {
             return null; // timeout
         }
+        return ownWithPermit(owner, logId, semaphore, "Acquired permit, but there are still permits available. Someone has released this saga-log-id when no ownership or lock/permit is held.");
+    }
+
+    /**
+     * With the log's permit taken: connects the log, records the ownership and takes the log out of the tryAcquire
+     * queue. On any failure the permit is given back.
+     */
+    private SagaLog ownWithPermit(SagaLogOwner owner, SagaLogId logId, Semaphore semaphore, String extraPermitMessage) {
         SagaLog sagaLog = null;
         try {
             if (semaphore.availablePermits() > 0) {
-                throw new IllegalStateException("Acquired permit, but there are still permits available. Someone has released this saga-log-id when no ownership or lock/permit is held.");
+                throw new IllegalStateException(extraPermitMessage);
             }
             sagaLog = doAssignPoolLocalOwnership(owner, logId);
             removeAvailable(logId);
             return sagaLog;
         } finally {
             if (sagaLog == null) {
-                exclusiveLockByLogId.get(logId).release();
+                semaphore.release();
             }
         }
     }
