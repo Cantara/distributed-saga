@@ -339,7 +339,8 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
 
     /**
      * With the log's permit taken: connects the log, records the ownership and takes the log out of the tryAcquire
-     * queue. On any failure the permit is given back.
+     * queue. On any failure the permit is given back, and a registered log is made available again: a tryAcquire may
+     * have polled and skipped it while the permit was held.
      */
     private SagaLog ownWithPermit(SagaLogOwner owner, SagaLogId logId, Semaphore semaphore, String extraPermitMessage) {
         SagaLog sagaLog = null;
@@ -353,6 +354,7 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
         } finally {
             if (sagaLog == null) {
                 semaphore.release();
+                makeAvailable(logId);
             }
         }
     }

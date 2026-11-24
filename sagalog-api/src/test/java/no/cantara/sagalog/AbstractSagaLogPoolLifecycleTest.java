@@ -343,6 +343,39 @@ public class AbstractSagaLogPoolLifecycleTest {
         pool.shutdown();
     }
 
+    @Test
+    public void thatALogWhoseDirectTakeFailsIsAvailableAgainAfterATryAcquireSkippedIt() throws Exception {
+        TestPool pool = new TestPool();
+        SagaLogId x = pool.registerInstanceLocalIdFor("x");
+        java.util.concurrent.CountDownLatch inConnect = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch fail = new java.util.concurrent.CountDownLatch(1);
+        pool.connector = id -> {
+            inConnect.countDown();
+            try {
+                assertTrue(fail.await(10, TimeUnit.SECONDS));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            throw new SagaLogBusyException("held by another process: " + id);
+        };
+        java.util.concurrent.CompletableFuture<Throwable> take = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try {
+                pool.tryTakeOwnership(new SagaLogOwner("direct"), x);
+                return null;
+            } catch (Throwable t) {
+                return t;
+            }
+        });
+        assertTrue(inConnect.await(10, TimeUnit.SECONDS));
+        assertEquals(pool.tryAcquire(new SagaLogOwner("other")), null, "x's permit is held: tryAcquire polls and skips it");
+        assertEquals(available(pool), List.of(), "x is out of the queue meanwhile");
+
+        fail.countDown();
+        assertTrue(take.get(10, TimeUnit.SECONDS) instanceof SagaLogBusyException);
+        assertEquals(available(pool), List.of(x), "the failed take puts x back, once");
+        pool.shutdown();
+    }
+
     @SuppressWarnings("unchecked")
     private static List<SagaLogId> available(AbstractSagaLogPool pool) throws Exception {
         java.lang.reflect.Field field = AbstractSagaLogPool.class.getDeclaredField("availableInstanceLocalIds");
