@@ -3,6 +3,7 @@ package no.cantara.sagalog;
 import no.cantara.sagalog.memory.MemorySagaLogPool;
 import org.testng.annotations.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -326,6 +327,27 @@ public class AbstractSagaLogPoolLifecycleTest {
         assertNotNull(log);
         assertEquals(log.id(), b, "the free log is handed out next");
         pool.shutdown();
+    }
+
+    @Test
+    public void thatALogOwnedBeforeItIsRegisteredIsNotAvailableUntilReleased() throws Exception {
+        TestPool pool = new TestPool();
+        SagaLogOwner owner = new SagaLogOwner("owner");
+        SagaLogId a = pool.idFor("test-instance", "a");
+        assertNotNull(pool.tryTakeOwnership(owner, a));
+        assertEquals(pool.registerInstanceLocalIdFor("a"), a);
+        assertEquals(available(pool), List.of(), "an owned log is not in the queue for tryAcquire");
+
+        pool.releaseOwnership(owner, a);
+        assertEquals(available(pool), List.of(a), "released, it is available, once");
+        pool.shutdown();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<SagaLogId> available(AbstractSagaLogPool pool) throws Exception {
+        java.lang.reflect.Field field = AbstractSagaLogPool.class.getDeclaredField("availableInstanceLocalIds");
+        field.setAccessible(true);
+        return new ArrayList<>((java.util.Collection<SagaLogId>) field.get(pool));
     }
 
     @Test
