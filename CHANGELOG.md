@@ -17,16 +17,18 @@
 - `org.postgresql:postgresql` 42.7.15.
 
 ### Added
-- **Asynchronous steps: `AsyncSagaAdapter`.** An adapter whose `executeActionAsync` and
-  `executeCompensatingActionAsync` return a `CompletionStage` holds no pool thread while its work runs. `Start` is
+- **Asynchronous steps: `AsyncSagaAdapter` (experimental).** Only for steps whose I/O is truly non-blocking and waits
+  long; a blocking step on the saga's own pool stays the default model (see [Asynchronous
+  adapters](docs/modules/saga-execution.md#asynchronous-adapters-experimental)). An adapter whose `executeActionAsync`
+  and `executeCompensatingActionAsync` return a `CompletionStage` holds no pool thread while its work runs. `Start` is
   written before the step starts; the thread that completes the stage only hands the rest of the node to the saga's
   pool, so `End`, `postAction`, the next nodes, the rollback and `onComplete` never run on the caller's threads; `End`
   is written before the next nodes start. A stage that fails with `AbortSagaException` rolls back; any other failure
   fails the saga with it (a checked one inside a `CompletionException`). The step counts as running until its stage
-  completes, so a rollback waits for it and its `End` is always written. Synchronous and asynchronous adapters mix
-  in one saga; `SagaAdapter`, `Adapter` and `AdapterLoader` are unchanged, and an asynchronous adapter is a
-  `SagaAdapter` whose synchronous methods are never called. `postAction` for an asynchronous step can run on another
-  pool thread than its `preAction`.
+  completes, so a rollback waits for it and its `End` is always written. Synchronous and asynchronous adapters mix in
+  one saga; `SagaAdapter`, `Adapter` and `AdapterLoader` are unchanged, and an asynchronous adapter is a `SagaAdapter`
+  whose synchronous methods are never called. `postAction` for an asynchronous step can run on another pool thread
+  than its `preAction`.
 - **`SagaHandoffControl.getState()`: where an execution is.** It returns a `SagaExecutionState` snapshot with the phase
   (`FORWARD`, `ROLLBACK`, `COMPLETED`), the nodes running, the nodes waiting for others (with how many signals each
   still waits for), the nodes visited, the walks that may still run, and the first failure. A join no longer holds a

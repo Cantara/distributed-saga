@@ -170,7 +170,17 @@ Rules for adapters:
   constructor") when the output type has no public `String` constructor, or the constructor throws (then that is the
   cause).
 
-### Asynchronous adapters
+### Asynchronous adapters (experimental)
+
+**Prefer the synchronous `SagaAdapter`.** A blocking step on the saga's own pool is the default model. It keeps one
+thread per step, so the order is plain, and the pool's threads cap how many steps run at once: a slow downstream
+system slows the sagas down instead of piling up work on it. With a bounded queue (the application's choice), new
+sagas are also rejected fast. Use `AsyncSagaAdapter` only when a step's I/O is truly non-blocking (no thread waits
+for it, as with a non-blocking HTTP client or a producer's send callback) and waits long. A blocking call wrapped in
+a future (`CompletableFuture.runAsync(...)` on another pool) gains nothing: the same thread waits, outside the saga
+pool's thread cap, and the saga loses that back-pressure. An asynchronous step also adds one way for a step to run
+twice (a rejected continuation, below), and so needs a queue that does not reject, which gives up rejection as
+back-pressure too. With idempotent actions a rerun is safe, but it is more rerun traffic.
 
 An action that waits for I/O holds a pool thread for as long as it waits. `AsyncSagaAdapter<O>` returns a
 `CompletionStage` instead, and holds no pool thread while the work runs:
