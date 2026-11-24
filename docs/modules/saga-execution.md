@@ -61,6 +61,13 @@ log, or the log tolerates concurrent writers.
 Both are the futures the engine completes: cancelling or completing them does not stop the saga, and hides its outcome
 from other callers waiting on them. Wait on them, or on a copy (`future.copy()`).
 
+The engine completes them on a walk's thread: the handoff future right after `Start` is written, the completion future
+after `onComplete`. A dependent attached with a non-async method (`thenRun`, `thenApply`, `whenComplete`) runs there,
+inside the saga's flow: while it runs, that walk does not go on. So attach work that blocks, or that waits for the saga,
+with the `*Async` methods and an executor of your own (`thenRunAsync(task, executor)`). The engine does not move them
+to another thread itself: the handoff is the earliest signal that the saga is durable, and a task on the saga's pool
+would queue it behind the sagas' walks.
+
 | Outcome | `onComplete` receives | Completion future |
 |---|---|---|
 | Success | a success result | completes with the result |

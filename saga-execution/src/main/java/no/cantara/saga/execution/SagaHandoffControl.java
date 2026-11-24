@@ -92,14 +92,16 @@ public class SagaHandoffControl {
 
     /**
      * @return a future that completes when the {@code Start} entry on {@code S} is written (in recovery, when the
-     * first walk starts), or fails at once with the saga's first failure if that comes before
+     * first walk starts), or fails at once with the saga's first failure if that comes before. It is completed on a
+     * walk's thread: attach work that blocks with the {@code *Async} methods and an executor of your own.
      */
     public SelectableFuture<SagaHandoffResult> getHandoffFuture() {
         return handoffFuture;
     }
 
     /**
-     * @return a future that completes when the saga has completed and {@code onComplete} has returned; see
+     * @return a future that completes when the saga has completed and {@code onComplete} has returned, on the thread
+     * that ran {@code onComplete}: attach work that blocks with the {@code *Async} methods and an executor of your own; see
      * {@link SagaExecution#executeSaga(String, Object, boolean, java.util.function.Consumer, java.util.function.Consumer, java.util.function.Consumer)}
      */
     public SelectableFuture<SagaHandoffResult> getCompletionFuture() {
