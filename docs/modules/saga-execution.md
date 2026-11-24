@@ -88,6 +88,7 @@ A join holds no thread while it waits, so a saga that does not complete may not 
 
 | Field | Meaning |
 |---|---|
+| `getExecutionId()` | The execution's id |
 | `getPhase()` | `FORWARD`, `ROLLBACK` (compensating after an abort), or `COMPLETED` (the completion future is done) |
 | `getRunningNodeIds()` | The nodes being visited now: an action or a compensating action, a log write for the node, its `preAction` or `postAction` |
 | `getWaitingNodeIds()` | Each node that some, but not all, of the nodes it depends on have signalled, with how many it still waits for |
@@ -107,7 +108,8 @@ walk of the last node it depends on starts it, so a small pool makes sagas slowe
 the pool and limits how many sagas run at once. The rejection policy must not run tasks on the
 submitting thread: under `CallerRunsPolicy` a walk the pool would run on the submitting thread is rejected, and the
 saga fails with `RejectedExecutionException`. A rejected walk fails the saga through its futures; `executeSaga` does
-not throw it. After `shutdownNow()`, cancel the tasks it returns, so that sagas whose walks were all queued complete.
+not throw it. An `Error` thrown by the executor's `submit` (an `OutOfMemoryError`, say) fails the saga too, and runs
+`onComplete`; when it comes from the first walk, `executeSaga` then rethrows it. After `shutdownNow()`, cancel the tasks it returns, so that sagas whose walks were all queued complete.
 See [Known limitations](../limitations.md#the-executor-rejection-shutdown-and-caller-runs).
 
 ### Recovery mode

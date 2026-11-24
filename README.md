@@ -28,19 +28,20 @@ The libraries are published to Cantara's Maven repository, not to Maven Central:
     <dependency>
         <groupId>no.cantara.saga</groupId>
         <artifactId>saga-execution</artifactId>       <!-- brings saga-api, sagalog-api and future-selector -->
-        <version>2.1.4</version>
+        <version>2.2.0</version>
     </dependency>
     <dependency>
         <groupId>no.cantara.saga</groupId>
         <artifactId>sagalog-postgres</artifactId>     <!-- or sagalog-file; the memory log is in sagalog-api -->
-        <version>2.1.4</version>
+        <version>2.2.0</version>
     </dependency>
 </dependencies>
 ```
 
-The latest release is 2.1.4 (Java 17; the library modules can be linked with jlink). If you are upgrading from 2.1.0,
-2.0.0 or 1.0.x, the [CHANGELOG](CHANGELOG.md) lists what changed and how to migrate; 2.1.0 and 2.1.1 have breaking
-changes. Upgrade every instance of an application together: 2.1.1 and later must not run side by side with 2.1.0.
+The latest release is 2.2.0 (Java 17; the library modules can be linked with jlink). From 2.1.x it is a drop-in
+upgrade: it adds API and breaks none. If you are upgrading from 2.1.0, 2.0.0 or 1.0.x, the [CHANGELOG](CHANGELOG.md)
+lists what changed and how to migrate; 2.1.0 and 2.1.1 have breaking changes. Upgrade every instance of an
+application together: 2.1.1 and later must not run side by side with 2.1.0.
 
 | Artifact | What it is |
 |---|---|
@@ -122,6 +123,8 @@ The developer documentation is in [docs/](docs/README.md):
 - [Architecture](docs/architecture.md): modules, Java modules, threading, saga-log providers
 - [Using the library](docs/using.md): a step-by-step guide
 - [Known limitations](docs/limitations.md): read before you go to production
+- [Design decisions](docs/design-decisions.md): why actions run at least once, why steps block on the saga's own
+  pool, and why the saga log is synchronous
 - Modules: [future-selector](docs/modules/future-selector.md), [saga-api](docs/modules/saga-api.md),
   [saga-execution](docs/modules/saga-execution.md), [saga-serialization](docs/modules/saga-serialization.md),
   [sagalog-api](docs/modules/sagalog-api.md), [sagalog-file](docs/modules/sagalog-file.md),
