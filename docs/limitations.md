@@ -29,7 +29,7 @@ completion too (see [No timeouts](#no-timeouts)).
 
 ## Thread starvation
 
-Since 2.1.5, a join node holds no pool thread while it waits: each node it depends on signals it when done, and
+Since 2.2.0, a join node holds no pool thread while it waits: each node it depends on signals it when done, and
 the walk of the last one starts it. A pool with fewer threads than the branches that run at the same time makes the
 sagas slower, not stuck; a saga needs one thread to make progress. Up to 2.1.4, a walk that reached a join waited on
 its pool thread, and a pool with fewer threads than the waiting branches deadlocked, rollback included.
