@@ -43,6 +43,11 @@
   so they complete, and the thread stays interrupted. A log whose lock is lost all the same refuses every later
   operation with `SagaLogBusyException` (as a PostgreSQL log that lost its lock does); closing it releases nothing and
   frees it to be opened again.
+- **A file saga log that cannot read its file again can be closed and opened again.** After a failed write or
+  truncate, the log reads its file again; when that failed too, it marked itself closed without closing the file or
+  releasing the lock, so `close()` did nothing and the log could not be opened again in the process. It now refuses
+  every later operation with `IllegalStateException` ("could not read its file again ..."), and `close()` releases the
+  file and the lock.
 
 ## 2.1.4 (2026-11-22)
 

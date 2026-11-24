@@ -47,7 +47,9 @@ SagaLogPool pool = initializer.initialize(Map.of(
 - **The file is read once, when the log is opened.** Opening decodes every entry and keeps them in memory; after
   that, `readIncompleteSagas`, `readEntries` and `truncate(id)` use the in-memory copy and do no file I/O. Only the
   open log can change its file (it holds the lock), so the copy stays exact; if a write or truncate fails, the log
-  reads the file again, and closes itself if that fails too. Memory follows the log's size; with the documented
+  reads the file again. If that fails too, the log refuses every later operation with `IllegalStateException`; close
+  it, which releases the file and the lock, and open it again. Up to 2.1.4 such a log marked itself closed without
+  releasing them, so it could not be opened again in the same process. Memory follows the log's size; with the documented
   pattern the log stays small. A corrupt file is reported when the log is opened.
 
 ## Failures

@@ -150,6 +150,36 @@ public class FileSagaLogInterruptTest {
         }
     }
 
+    @Test
+    public void thatALogThatCannotReadItsFileAgainCanStillBeClosedAndOpenedAgain() throws Exception {
+        FileSagaLogId id = id("unreadable");
+        FileSagaLog log = new FileSagaLog(id);
+        log.write(start("e1", "{}")).join();
+        queueFileRaf(log).close(); // as an interrupt during the queue file's I/O would: the write and the reload fail
+
+        expectThrows(CompletionException.class, () -> log.write(start("e2", "{}")).join());
+        IllegalStateException refused = expectThrows(IllegalStateException.class, () -> log.readEntries("e1").count());
+        assertTrue(refused.getMessage().contains("open it again"), "the log refuses every later operation: " + refused.getMessage());
+        assertTrue(lockHeld(id), "the log still holds its lock until it is closed");
+
+        log.close();
+        assertFalse(lockHeld(id), "close released the lock");
+        try (FileSagaLog reopened = new FileSagaLog(id)) {
+            assertEquals(reopened.readEntries("e1").count(), 1L, "the log can be opened again, and kept its entry");
+        } catch (SagaLogBusyException e) {
+            fail("close did not release the lock file", e);
+        }
+    }
+
+    private static java.io.RandomAccessFile queueFileRaf(FileSagaLog log) throws Exception {
+        Field queueFileField = FileSagaLog.class.getDeclaredField("queueFile");
+        queueFileField.setAccessible(true);
+        Object queueFile = queueFileField.get(log);
+        Field rafField = queueFile.getClass().getDeclaredField("raf");
+        rafField.setAccessible(true);
+        return (java.io.RandomAccessFile) rafField.get(queueFile);
+    }
+
     private static FileChannel lockChannel(FileSagaLog log) throws Exception {
         Field lockField = FileSagaLog.class.getDeclaredField("lock");
         lockField.setAccessible(true);

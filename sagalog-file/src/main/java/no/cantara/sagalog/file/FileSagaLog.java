@@ -51,6 +51,7 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     private long nextId;
     private long persistedNextId;
     private boolean closed;
+    private boolean unreadable; // the file could not be read again after a failed change; close() still releases all
     private boolean lockLost;
 
     /**
@@ -225,7 +226,8 @@ class FileSagaLog implements SagaLog, AutoCloseable {
 
     /**
      * After a failed change of the file, the in-memory copy may no longer match it: read the file again. If that fails
-     * too, the log can't be trusted, and it is closed (the caller must open it again).
+     * too, the log can't be trusted: it refuses every later operation, and {@link #close()} still releases the file and
+     * the lock, so the caller can open it again.
      */
     private void reloadAfterFailure(Exception primary) {
         try {
@@ -237,7 +239,7 @@ class FileSagaLog implements SagaLog, AutoCloseable {
             entries.addAll(reloaded);
         } catch (Exception e) {
             primary.addSuppressed(e);
-            closed = true;
+            unreadable = true;
             entries.clear();
         }
     }
@@ -268,7 +270,8 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     /**
      * Reads the in-memory copy; no file I/O.
      *
-     * @throws IllegalStateException if the log is closed
+     * @throws IllegalStateException if the log is closed, or could not read its file again after a failed change
+     * @throws SagaLogBusyException  if the log has lost its lock
      */
     @Override
     public Stream<SagaLogEntry> readIncompleteSagas() {
@@ -278,7 +281,8 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     /**
      * Reads the in-memory copy; no file I/O.
      *
-     * @throws IllegalStateException if the log is closed
+     * @throws IllegalStateException if the log is closed, or could not read its file again after a failed change
+     * @throws SagaLogBusyException  if the log has lost its lock
      */
     @Override
     public Stream<SagaLogEntry> readEntries(String executionId) {
@@ -306,12 +310,16 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     }
 
     /**
-     * @throws IllegalStateException if the log is closed
+     * @throws IllegalStateException if the log is closed, or could not read its file again after a failed change
      * @throws SagaLogBusyException  if the log has lost its lock
      */
     private void checkOpen() {
         if (closed) {
             throw new IllegalStateException("Saga-log is closed: " + path);
+        }
+        if (unreadable) {
+            throw new IllegalStateException("Saga-log could not read its file again after a failed change, so it refuses"
+                    + " every operation: close it, and open it again: " + path);
         }
         if (lockLost || !lock.isValid()) {
             throw lockLost(null);
