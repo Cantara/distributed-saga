@@ -1,9 +1,5 @@
 package no.cantara.saga.execution;
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.CompletionException;
-import no.cantara.saga.execution.adapter.AsyncSagaAdapter;
 import no.cantara.concurrent.futureselector.SelectableFuture;
 import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
 import no.cantara.saga.api.Saga;
@@ -225,41 +221,13 @@ public class SagaExecution {
                 // a new round: not started, or aborted, or (being) compensated
                 sagaLog.write(sagaLog.builder().startAction(executionId, ste.node.id)).join();
             }
-            if (adapter instanceof AsyncSagaAdapter<?> asyncAdapter) {
-                CompletionStage<?> stage;
-                try {
-                    stage = Objects.requireNonNull(asyncAdapter.executeActionAsync(ste.node, sagaInput, ste.outputByNode),
-                            () -> "executeActionAsync returned null: " + asyncAdapter.name());
-                } catch (AbortSagaException e) {
-                    return abort(ste.node, e);
-                }
-                // runs on the pool once the stage has completed, never on the thread that completed it
-                return new SagaTraversal.Pending(stage, (actionOutput, failure) -> {
-                    if (failure != null) {
-                        Throwable cause = unwrap(failure);
-                        if (cause instanceof AbortSagaException abort) {
-                            return abort(ste.node, abort);
-                        }
-                        throw unchecked(cause);
-                    }
-                    return actionEnded(ste, adapter, actionOutput);
-                });
-            }
             Object actionOutput;
             try {
                 actionOutput = adapter.executeAction(ste.node, sagaInput, ste.outputByNode);
             } catch (AbortSagaException e) {
                 return abort(ste.node, e);
             }
-            return actionEnded(ste, adapter, actionOutput);
-        }
 
-        /**
-         * The action has ended: writes its End entry, then calls {@code postAction}.
-         *
-         * @return the action's output
-         */
-        private Object actionEnded(SagaTraversalElement ste, SagaAdapter<?> adapter, Object actionOutput) {
             String serializedActionOutput = actionOutput == null ? null : serialize(adapter, actionOutput);
             sagaLog.write(sagaLog.builder().endAction(executionId, ste.node.id, serializedActionOutput)).join();
 
@@ -293,29 +261,29 @@ public class SagaExecution {
             current = backward;
             rollingBack = true;
             Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId = sagaLog.getSnapshotOfSagaLogEntriesByNodeId(executionId);
-            backward.backwardOnThisThread(ste -> visitBackward(ste, sagaLogEntriesBySagaNodeId, abort));
+            backward.backwardOnThisThread(ste -> {
+                visitBackward(ste, sagaLogEntriesBySagaNodeId, abort);
+                return null; // a backward visit has no output
+            });
         }
 
-        /**
-         * @return null (a backward visit has no output), or the pending compensation of an asynchronous adapter
-         */
-        private Object visitBackward(SagaTraversalElement ste, Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId, AbortSagaException abort) {
+        private void visitBackward(SagaTraversalElement ste, Map<String, List<SagaLogEntry>> sagaLogEntriesBySagaNodeId, AbortSagaException abort) {
             if (Saga.ID_END.equals(ste.node.id)) {
-                return null;
+                return;
             }
             if (Saga.ID_START.equals(ste.node.id)) {
                 sagaLog.write(sagaLog.builder().endSaga(executionId)).join();
                 completionFuture.completeExceptionally(abort);
-                return null;
+                return;
             }
             SagaAdapter<?> adapter = adapterLoader.load(ste.node);
             List<SagaLogEntry> sagaLogEntries = sagaLogEntriesBySagaNodeId.get(ste.node.id);
             SagaLogEntryType lastEntryType = lastEntryType(sagaLogEntries);
             if (lastEntryType == null || lastEntryType == SagaLogEntryType.Abort || lastEntryType == SagaLogEntryType.Comp) {
-                return null; // never started, the aborting node itself, or already compensated
+                return; // never started, the aborting node itself, or already compensated
             }
             if (!adapter.hasCompensatingAction()) {
-                return null; // nothing to undo; its effect stays and no compensation is logged
+                return; // nothing to undo; its effect stays and no compensation is logged
             }
             // the action started but did not end (last entry Start): it may or may not have run; no output
             Optional<String> serializedOutput = lastEntryType == SagaLogEntryType.End || lastEntryType == SagaLogEntryType.CompStart
@@ -325,53 +293,9 @@ public class SagaExecution {
                 // written before the compensating action runs, so a crash during it leaves the node marked as undone
                 sagaLog.write(sagaLog.builder().compStart(executionId, ste.node.id)).join();
             }
-            if (adapter instanceof AsyncSagaAdapter<?> asyncAdapter) {
-                CompletionStage<Void> stage = Objects.requireNonNull(compensateAsync(asyncAdapter, ste.node, sagaInput, serializedOutput),
-                        () -> "executeCompensatingActionAsync returned null: " + asyncAdapter.name());
-                // runs on the pool once the stage has completed, never on the thread that completed it
-                return new SagaTraversal.Pending(stage, (ignored, failure) -> {
-                    if (failure != null) {
-                        throw unchecked(unwrap(failure));
-                    }
-                    sagaLog.write(sagaLog.builder().compDone(executionId, ste.node.id)).join();
-                    return null;
-                });
-            }
             compensate(adapter, ste.node, sagaInput, serializedOutput);
             sagaLog.write(sagaLog.builder().compDone(executionId, ste.node.id)).join();
-            return null;
         }
-    }
-
-    /**
-     * The failure a stage completed with: the cause of a {@code CompletionException} or {@code ExecutionException}
-     * that wraps it.
-     */
-    static Throwable unwrap(Throwable failure) {
-        Throwable t = failure;
-        while ((t instanceof CompletionException || t instanceof ExecutionException) && t.getCause() != null) {
-            t = t.getCause();
-        }
-        return t;
-    }
-
-    /**
-     * A step's failure, to throw on the walk: an unchecked one as it is; a checked one inside a
-     * {@code CompletionException}.
-     */
-    static RuntimeException unchecked(Throwable t) {
-        if (t instanceof RuntimeException re) {
-            return re;
-        }
-        if (t instanceof Error e) {
-            throw e;
-        }
-        return new CompletionException(t);
-    }
-
-    private static <O> CompletionStage<Void> compensateAsync(AsyncSagaAdapter<O> adapter, SagaNode node, Object sagaInput, Optional<String> serializedOutput) {
-        O actionOutput = serializedOutput.map(jsonData -> adapter.serializer().deserialize(jsonData)).orElse(null);
-        return adapter.executeCompensatingActionAsync(node, sagaInput, actionOutput);
     }
 
     @SuppressWarnings("unchecked")

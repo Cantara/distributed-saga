@@ -5,15 +5,7 @@ import no.cantara.saga.api.Saga;
 import no.cantara.saga.api.SagaNode;
 import no.cantara.saga.execution.adapter.AbortSagaException;
 import no.cantara.saga.execution.adapter.Adapter;
-import no.cantara.saga.execution.adapter.ActionOutputSerializer;
-import no.cantara.saga.execution.adapter.ActionOutputSerializerToStringAndStringConstructor;
 import no.cantara.saga.execution.adapter.AdapterLoader;
-import no.cantara.saga.execution.adapter.AsyncSagaAdapter;
-import no.cantara.sagalog.SagaLog;
-import no.cantara.sagalog.SagaLogEntry;
-import no.cantara.sagalog.SagaLogEntryBuilder;
-import no.cantara.sagalog.SagaLogEntryId;
-import no.cantara.sagalog.SagaLogId;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -26,22 +18,14 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
@@ -51,12 +35,8 @@ import static org.testng.Assert.fail;
 
 /**
  * Random sagas on small pools: random graphs of up to eight steps, pools of one to three threads, up to four sagas at
- * once, and each saga succeeding, aborting at a random step, or failing at one. Each step is synchronous or, at random,
- * asynchronous: its stage completes on a thread of another executor, as an RxJava scheduler or a database driver
- * would. Every run checks:
+ * once, and each saga succeeding, aborting at a random step, or failing at one. Every run checks:
  * <ul>
- * <li>no saga-log write, and no {@code onComplete}, runs on that other executor's threads: the saga continues on its
- * own pool;</li>
  * <li>the saga completes: no saga waits for a pool thread another walk of its own, or another saga, holds;</li>
  * <li>each step runs at most once, only after every step it depends on has ended, and receives their outputs;</li>
  * <li>a successful saga runs every step;</li>
@@ -117,10 +97,9 @@ public class SagaExecutionRandomGraphTest {
         int threads = 1 + random.nextInt(3);
         int sagas = 1 + random.nextInt(4);
 
-        ExecutorService foreign = Executors.newFixedThreadPool(2, r -> new Thread(r, "foreign-" + FOREIGN_THREADS.incrementAndGet()));
         AdapterLoader adapters = new AdapterLoader();
         for (String id : stepIds) {
-            BiFunction<Object, Map<SagaNode, Object>, String> action = (input, dependeesOutput) -> {
+            adapters.register(new Adapter<String>(String.class, id, (input, dependeesOutput) -> {
                 Run run = (Run) input;
                 run.started.put(id, run.clock.incrementAndGet());
                 run.dependees.put(id, dependeesOutput.keySet().stream().map(n -> n.id).collect(Collectors.toSet()));
@@ -141,8 +120,7 @@ public class SagaExecutionRandomGraphTest {
                 }
                 run.ended.put(id, run.clock.incrementAndGet());
                 return id;
-            };
-            BiConsumer<Object, String> compensation = (input, output) -> {
+            }, (input, output) -> {
                 Run run = (Run) input;
                 if (!id.equals(output)) {
                     run.errors.add(id + " compensated with output " + output);
@@ -150,12 +128,7 @@ public class SagaExecutionRandomGraphTest {
                 if (run.compensated.put(id, run.clock.incrementAndGet()) != null) {
                     run.errors.add(id + " compensated twice");
                 }
-            };
-            if (random.nextBoolean()) {
-                adapters.register(new AsyncStep(id, foreign, action, compensation));
-            } else {
-                adapters.register(new Adapter<String>(String.class, id, action, compensation));
-            }
+            }));
         }
 
         SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(threads, threads, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
@@ -168,11 +141,8 @@ public class SagaExecutionRandomGraphTest {
                 Outcome outcome = Outcome.values()[random.nextInt(Outcome.values().length)];
                 Run run = new Run(clock, outcome, stepIds.get(random.nextInt(stepIds.size())));
                 runs.add(run);
-                controls.add(new SagaExecution(new NoWritesOnForeignThreads(MemoryLogs.newLog(), run), pool, saga, adapters)
+                controls.add(new SagaExecution(MemoryLogs.newLog(), pool, saga, adapters)
                         .executeSaga(UUID.randomUUID().toString(), run, false, r -> {
-                            if (Thread.currentThread().getName().startsWith("foreign-")) {
-                                run.errors.add("onComplete ran on " + Thread.currentThread().getName());
-                            }
                         }));
             }
             for (int i = 0; i < sagas; i++) {
@@ -180,84 +150,7 @@ public class SagaExecutionRandomGraphTest {
             }
         } finally {
             pool.shutdownNow();
-            foreign.shutdownNow();
         }
-    }
-
-    private static final AtomicInteger FOREIGN_THREADS = new AtomicInteger();
-
-    /**
-     * An asynchronous step: the action and the compensation run on the other executor, and the stage completes there.
-     */
-    static final class AsyncStep implements AsyncSagaAdapter<String> {
-        final String id;
-        final ExecutorService foreign;
-        final BiFunction<Object, Map<SagaNode, Object>, String> action;
-        final BiConsumer<Object, String> compensation;
-
-        AsyncStep(String id, ExecutorService foreign, BiFunction<Object, Map<SagaNode, Object>, String> action, BiConsumer<Object, String> compensation) {
-            this.id = id;
-            this.foreign = foreign;
-            this.action = action;
-            this.compensation = compensation;
-        }
-
-        @Override
-        public String name() {
-            return id;
-        }
-
-        @Override
-        public CompletionStage<String> executeActionAsync(SagaNode sagaNode, Object sagaInput, Map<SagaNode, Object> dependeesOutput) {
-            return CompletableFuture.supplyAsync(() -> action.apply(sagaInput, dependeesOutput), foreign);
-        }
-
-        @Override
-        public CompletionStage<Void> executeCompensatingActionAsync(SagaNode sagaNode, Object sagaInput, String actionOutput) {
-            return CompletableFuture.runAsync(() -> compensation.accept(sagaInput, actionOutput), foreign);
-        }
-
-        @Override
-        public boolean hasCompensatingAction() {
-            return true;
-        }
-
-        @Override
-        public ActionOutputSerializer<String> serializer() {
-            return new ActionOutputSerializerToStringAndStringConstructor<>(String.class);
-        }
-    }
-
-    /**
-     * A saga log that records an error when it is written on a thread of the other executor.
-     */
-    static final class NoWritesOnForeignThreads implements SagaLog {
-        final SagaLog delegate;
-        final Run run;
-
-        NoWritesOnForeignThreads(SagaLog delegate, Run run) {
-            this.delegate = delegate;
-            this.run = run;
-        }
-
-        @Override
-        public CompletableFuture<SagaLogEntry> write(SagaLogEntryBuilder builder) {
-            if (Thread.currentThread().getName().startsWith("foreign-")) {
-                run.errors.add(builder.entryType() + " written on " + Thread.currentThread().getName());
-            }
-            return delegate.write(builder);
-        }
-
-        @Override public SagaLogId id() { return delegate.id(); }
-        @Override public CompletableFuture<Void> truncate(SagaLogEntryId id) { return delegate.truncate(id); }
-        @Override public CompletableFuture<Void> truncate() { return delegate.truncate(); }
-        @Override public Stream<SagaLogEntry> readIncompleteSagas() { return delegate.readIncompleteSagas(); }
-        @Override public Stream<SagaLogEntry> readEntries(String executionId) { return delegate.readEntries(executionId); }
-        @Override public String toString(SagaLogEntryId id) { return delegate.toString(id); }
-        @Override public SagaLogEntryId fromString(String id) { return delegate.fromString(id); }
-        @Override public byte[] toBytes(SagaLogEntryId id) { return delegate.toBytes(id); }
-        @Override public SagaLogEntryId fromBytes(byte[] idBytes) { return delegate.fromBytes(idBytes); }
-        @Override public void close() throws Exception { delegate.close(); }
     }
 
     private static Random random(String id) {
