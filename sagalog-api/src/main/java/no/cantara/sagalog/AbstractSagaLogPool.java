@@ -217,7 +217,9 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
             return sagaLog;
         } finally {
             if (!done) {
-                makeAvailable(sagaLogId, true); // failed to connect: keep it available for a later attempt
+                // failed to connect (held by another process, say): keep it available for a later attempt, behind the
+                // other available logs, so that they are handed out meanwhile
+                makeAvailable(sagaLogId);
             }
         }
     }
@@ -269,9 +271,9 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
 
     /**
      * A registered instance-local log is available (in the queue for tryAcquire) exactly when nobody owns it, and is
-     * in the queue at most once.
+     * in the queue at most once. It joins the queue at the back.
      */
-    private void makeAvailable(SagaLogId logId, boolean first) {
+    private void makeAvailable(SagaLogId logId) {
         if (!registeredInstanceLocalSagaLogIds.contains(logId)) {
             return;
         }
@@ -281,11 +283,7 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
             if (owned || availableInstanceLocalIds.contains(logId)) {
                 return;
             }
-            if (first) {
-                availableInstanceLocalIds.addFirst(logId);
-            } else {
-                availableInstanceLocalIds.addLast(logId);
-            }
+            availableInstanceLocalIds.addLast(logId);
         }
     }
 
@@ -369,7 +367,7 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
         } finally {
             releaseLock(logId);
         }
-        makeAvailable(logId, false);
+        makeAvailable(logId);
     }
 
     @Override
@@ -386,7 +384,7 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
             throw new IllegalStateException(String.format("SagaLogOwner %s cannot release saga-log with id %s. It was released concurrently.", owner.getOwnerId(), logId));
         }
         releaseLock(logId);
-        makeAvailable(logId, false);
+        makeAvailable(logId);
     }
 
     private void releaseLock(SagaLogId logId) {
