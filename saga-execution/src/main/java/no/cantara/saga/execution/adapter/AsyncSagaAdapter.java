@@ -6,6 +6,12 @@ import java.util.Map;
 import java.util.concurrent.CompletionStage;
 
 /**
+ * <b>Experimental.</b> Use it only for a step whose I/O is truly non-blocking (no thread waits for it, as with a
+ * non-blocking HTTP client or a producer's send callback) and waits long. A blocking call wrapped in a future (for
+ * example {@code runAsync} on another pool) gains nothing: the same thread waits elsewhere, outside the saga pool's
+ * bound, so the saga loses its back-pressure. Prefer {@link SagaAdapter} otherwise: a blocking step on the saga's own,
+ * bounded pool is the default model.
+ * <p>
  * An adapter whose action and compensating action run asynchronously: each returns a {@link CompletionStage} that
  * completes when the work is done, and holds no pool thread of the saga meanwhile. Register it with the
  * {@link AdapterLoader} like any adapter; the engine calls {@link #executeActionAsync} and

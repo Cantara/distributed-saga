@@ -115,7 +115,7 @@ When the libraries are put in a shaded ("fat") jar, the service files must be me
   the output of every incoming node.
 - Every saga-log write is joined before the walk continues.
 - Each action runs on the pool thread of the walk that reached it. An asynchronous action
-  ([`AsyncSagaAdapter`](modules/saga-execution.md#asynchronous-adapters)) holds no thread while it runs: the walk ends
+  ([`AsyncSagaAdapter`](modules/saga-execution.md#asynchronous-adapters-experimental), experimental) holds no thread while it runs: the walk ends
   after `Start`, and when its stage completes, the thread that completed it only submits a new walk to the pool,
   which writes `End` and goes on.
 - A walk that fails stops the traversal: no walk starts a new node, and the nodes that depend on the failed one are

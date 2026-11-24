@@ -17,7 +17,8 @@
 - `org.postgresql:postgresql` 42.7.15.
 
 ### Added
-- **Asynchronous steps: `AsyncSagaAdapter`.** An adapter whose `executeActionAsync` and
+- **Asynchronous steps: `AsyncSagaAdapter` (experimental).** Only for steps whose I/O is truly non-blocking and
+  waits long; a blocking step on the saga's bounded pool stays the default model (see the module doc). An adapter whose `executeActionAsync` and
   `executeCompensatingActionAsync` return a `CompletionStage` holds no pool thread while its work runs. `Start` is
   written before the step starts; the thread that completes the stage only hands the rest of the node to the saga's
   pool, so `End`, `postAction`, the next nodes, the rollback and `onComplete` never run on the caller's threads; `End`
