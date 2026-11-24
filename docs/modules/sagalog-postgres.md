@@ -81,8 +81,8 @@ path of the RDS CA bundle (`global-bundle.pem`).
     when that would pass 63 bytes). Opening a log creates the index if it is missing, so tables made by earlier
     versions get it on their next open. On a large table, that first open waits for the index to be built, and
     holds off writes to that log meanwhile. Every open runs `CREATE INDEX IF NOT EXISTS`, which takes a `SHARE` lock
-    on the table for a moment even when the index exists, so an open waits behind a `VACUUM` (also autovacuum) or DDL
-    on that table.
+    on the table for a moment even when the index exists, so an open waits behind a manual `VACUUM`, an
+    anti-wraparound autovacuum, or DDL on that table (a plain autovacuum gives way after `deadlock_timeout`).
 
 - Reads are `ORDER BY entry_id`, which is write order within a log. `readIncompleteSagas()` reads the whole table into
   memory, finished executions included, so truncate logs after their sagas finish.
@@ -126,9 +126,10 @@ So the next operation of the log, which finds its connection gone:
    again.
 
 While it waits, the log's other operations wait too. Each operation that finds the connection gone makes its own
-attempt, which takes up to `connection-pool.connection-timeout` (30 s by default) to get a connection and 10 s for the
-lock. So with K operations queued on one log while the database is unreachable, the last can wait about
-K × (connection timeout + 10 s) before it fails; `close()` waits for the attempt in progress. A connection that is
+attempt. While the database is unreachable, an attempt fails once getting a connection has taken
+`connection-pool.connection-timeout` (30 s by default), so with K operations queued on one log the last can wait about
+K × the connection timeout before it fails. When a connection is had but another process holds the lock, an attempt
+waits up to 10 s more for it. `close()` waits for the attempt in progress. A connection that is
 half open (the server is gone, but no reset arrives) is not noticed at all while `postgres.driver.socket-timeout`,
 `postgres.statement-timeout` and `postgres.lock-timeout` are `0`, their defaults: set them to bound how long an
 operation can hang. A process on 2.1.0 or earlier does not write the token, so during a rolling upgrade a log taken
