@@ -34,6 +34,15 @@
   without a bound while a walk ran, and held its monitor meanwhile, so a walk that hung made it, and every other caller,
   wait for ever, against its Javadoc. It now throws `TimeoutRuntimeException` when the time is up, and a second caller
   gives up in time too.
+- **The caller's interrupt no longer breaks a file saga log.** The lock on a log's lock file is held through a
+  `FileChannel`, and the JDK closes a `FileChannel` when the thread using it is interrupted; closing it releases the
+  operating-system lock. A truncate that emptied the log on an interrupted thread (an executor's `shutdownNow`, or
+  `cancel(true)`) failed, released the lock, and left the log open and writing without it: another process could then
+  open the same file. A write that grew the file on an interrupted thread failed too, and broke the log's own file.
+  `write` and `truncate` now set a pending interrupt aside while they use the files and restore it before they return,
+  so they complete, and the thread stays interrupted. A log whose lock is lost all the same refuses every later
+  operation with `SagaLogBusyException` (as a PostgreSQL log that lost its lock does); closing it releases nothing and
+  frees it to be opened again.
 
 ## 2.1.4 (2026-11-22)
 

@@ -23,6 +23,12 @@ import java.util.stream.Stream;
  * file's monitor. {@code write} and {@code truncate} report every failure through the returned future; the reads
  * throw.
  * <p>
+ * The caller's interrupt does not break the log. The JDK closes a file channel when the thread using it is
+ * interrupted, and closing the lock file's channel releases the lock, so {@code write} and {@code truncate} set a
+ * pending interrupt aside while they use the files and restore it before they return. A log whose lock is lost all the
+ * same (an interrupt that arrives during the I/O) refuses every later operation with {@link SagaLogBusyException}, so it
+ * never writes a file another process may have opened since: close it, and open it again.
+ * <p>
  * The file is read once, when the log is opened; the decoded entries are kept in memory, and reads and truncates use
  * them. Only this open log can change the file, so the copy stays exact. Memory use follows the log's size, which
  * stays small when finished executions are truncated.
@@ -45,6 +51,7 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     private long nextId;
     private long persistedNextId;
     private boolean closed;
+    private boolean lockLost;
 
     /**
      * Opens the log, holding an exclusive lock on its lock file ({@code <log file>.lock}) until {@link #close()}.
@@ -121,6 +128,7 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     @Override
     public CompletableFuture<SagaLogEntry> write(SagaLogEntryBuilder builder) {
         synchronized (queueFile) {
+            boolean interrupted = Thread.interrupted(); // set aside: an interrupt closes the file channels
             try {
                 checkOpen();
                 if (builder.id() == null) {
@@ -139,6 +147,8 @@ class FileSagaLog implements SagaLog, AutoCloseable {
                 return CompletableFuture.completedFuture(entry);
             } catch (Exception e) {
                 return CompletableFuture.failedFuture(translate("Cannot write to saga-log ", e));
+            } finally {
+                restore(interrupted);
             }
         }
     }
@@ -146,6 +156,7 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     @Override
     public CompletableFuture<Void> truncate(SagaLogEntryId id) {
         synchronized (queueFile) {
+            boolean interrupted = Thread.interrupted(); // set aside: an interrupt closes the file channels
             try {
                 checkOpen();
                 if (!(id instanceof FileSagaLogEntryId fileId)) {
@@ -174,6 +185,8 @@ class FileSagaLog implements SagaLog, AutoCloseable {
                 return CompletableFuture.completedFuture(null);
             } catch (Exception e) {
                 return CompletableFuture.failedFuture(translate("Cannot truncate saga-log ", e));
+            } finally {
+                restore(interrupted);
             }
         }
     }
@@ -181,6 +194,7 @@ class FileSagaLog implements SagaLog, AutoCloseable {
     @Override
     public CompletableFuture<Void> truncate() {
         synchronized (queueFile) {
+            boolean interrupted = Thread.interrupted(); // set aside: an interrupt closes the file channels
             try {
                 checkOpen();
                 persistNextId();
@@ -194,7 +208,18 @@ class FileSagaLog implements SagaLog, AutoCloseable {
                 return CompletableFuture.completedFuture(null);
             } catch (Exception e) {
                 return CompletableFuture.failedFuture(translate("Cannot truncate saga-log ", e));
+            } finally {
+                restore(interrupted);
             }
+        }
+    }
+
+    /**
+     * Restores the interrupt that was set aside, so that the caller sees it.
+     */
+    private static void restore(boolean interrupted) {
+        if (interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -222,9 +247,22 @@ class FileSagaLog implements SagaLog, AutoCloseable {
      */
     private void persistNextId() throws IOException {
         if (nextId != persistedNextId) {
-            lock.writeNextId(nextId);
+            try {
+                lock.writeNextId(nextId);
+            } catch (IOException e) {
+                if (!lock.isValid()) {
+                    throw lockLost(e); // the channel was closed (an interrupt during the write): the lock went with it
+                }
+                throw e;
+            }
             persistedNextId = nextId;
         }
+    }
+
+    private SagaLogBusyException lockLost(Throwable cause) {
+        lockLost = true;
+        return new SagaLogBusyException("Saga-log lost its lock, so another process may have opened it; it refuses every"
+                + " operation: close it, and open it again: " + path, cause);
     }
 
     /**
@@ -267,9 +305,16 @@ class FileSagaLog implements SagaLog, AutoCloseable {
         }
     }
 
+    /**
+     * @throws IllegalStateException if the log is closed
+     * @throws SagaLogBusyException  if the log has lost its lock
+     */
     private void checkOpen() {
         if (closed) {
             throw new IllegalStateException("Saga-log is closed: " + path);
+        }
+        if (lockLost || !lock.isValid()) {
+            throw lockLost(null);
         }
     }
 

@@ -132,12 +132,22 @@ final class FileSagaLogLock implements AutoCloseable {
     }
 
     /**
-     * Releases the lock. Call once.
+     * @return true while the lock is held: false once it is released, or once its channel was closed (the JDK closes it
+     * when the thread using it is interrupted)
+     */
+    boolean isValid() {
+        return lock.isValid();
+    }
+
+    /**
+     * Releases the lock, unless it is already lost. Call once.
      */
     @Override
     public void close() throws IOException {
         try (channel) {
-            lock.release();
+            if (lock.isValid()) {
+                lock.release();
+            }
         } finally {
             HELD.remove(lockFile);
         }
