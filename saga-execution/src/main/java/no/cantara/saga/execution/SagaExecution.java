@@ -22,9 +22,11 @@ import java.util.function.Consumer;
 /**
  * Runs executions of one saga on a thread pool, writing every step to a saga log.
  * <p>
- * The pool belongs to the caller. A saga holds a pool thread for every walk that runs, waits at a join node, or waits
- * for a saga-log write or read; none of these waits has a timeout in the engine. Size the pool for the sagas that run
- * at the same time, and limit how many run at once in the application. The pool's rejection policy must not run
+ * The pool belongs to the caller. A saga holds a pool thread for every walk that runs an action or waits for a
+ * saga-log write or read; none of these waits has a timeout in the engine. A node with several incoming nodes (a join)
+ * holds no thread while it waits for them: the walk of the last one starts it, so a pool smaller than the saga's
+ * branches makes it slower, not stuck. Size the pool for the sagas that run at the same time, and limit how many run
+ * at once in the application. The pool's rejection policy must not run
  * tasks on the submitting thread ({@code ThreadPoolExecutor.CallerRunsPolicy}): such a walk is rejected and fails the
  * saga. A rejected walk fails the saga with the {@link java.util.concurrent.RejectedExecutionException}.
  */

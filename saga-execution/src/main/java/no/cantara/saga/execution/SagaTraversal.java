@@ -1,14 +1,13 @@
 package no.cantara.saga.execution;
 
-import no.cantara.concurrent.futureselector.FutureSelector;
 import no.cantara.concurrent.futureselector.SelectableFuture;
 import no.cantara.concurrent.futureselector.SelectableThreadPoolExecutor;
-import no.cantara.concurrent.futureselector.Selection;
 import no.cantara.concurrent.futureselector.Utils;
 import no.cantara.saga.api.Saga;
 import no.cantara.saga.api.SagaNode;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -18,24 +17,29 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.function.Function;
 
 /**
- * One traversal of a saga's graph, forward or backward: one walk at the first node, one more walk per extra branch,
- * a join waiting on its pool thread for the nodes it depends on.
+ * One traversal of a saga's graph, forward or backward: one walk at the first node, one more walk per extra branch.
+ * <p>
+ * No walk waits for another. Each node counts the nodes it depends on that have not yet been visited (forward: its
+ * incoming nodes; backward: its outgoing nodes). A walk that has visited a node signals each node that depends on it,
+ * and the signal that brings a node's count to zero starts that node: on the same walk for one of them, on a new walk
+ * for each other. So a join is started by the walk of the last node it depends on, and holds no pool thread while it
+ * waits; a pool smaller than the saga's branches makes the saga slower, not stuck.
  * <p>
  * Every walk is counted in the execution's {@link SagaWalks} from just before it is submitted until it has ended or
- * is known never to run. A walk that fails stops the traversal (se-1): walks waiting at a join are released, and no
- * walk starts a new node. A walk the executor rejects, or that it drops and the caller cancels, fails the saga
- * (se-4). A walk that the executor would run on the thread that submits it (a caller-runs rejection policy) is
- * rejected instead, since that thread may be the one the walk waits for (se-5).
+ * is known never to run. A walk that fails stops the traversal (se-1): no walk starts a new node, and the nodes that
+ * depend on the failed one are never signalled. A walk the executor rejects, or that it drops and the caller cancels,
+ * fails the saga (se-4). A walk that the executor would run on the thread that submits it (a caller-runs rejection
+ * policy) is rejected instead (se-5).
  */
 class SagaTraversal {
 
@@ -43,8 +47,6 @@ class SagaTraversal {
     private final Saga saga;
     private final SagaWalks walks;
     private final AtomicBoolean stopSignal = new AtomicBoolean(false);
-    private final SelectableFuture<Object> stopSelectable = new SelectableFuture<>(() -> null);
-    private final SelectableFuture<SelectableFuture<Object>> stopSelectableSelectable = new SelectableFuture<>(() -> null);
     // walks submitted but not started; claimed by whoever stops the traversal, as they would do nothing
     private final Set<Walk> notStarted = ConcurrentHashMap.newKeySet();
 
@@ -59,17 +61,13 @@ class SagaTraversal {
     }
 
     /**
-     * Stops the traversal: walks waiting at a join return, and no walk starts a new node. The walks that were
-     * submitted but have not started are ended at once.
+     * Stops the traversal: no walk starts a new node. The walks that were submitted but have not started are ended at
+     * once.
      *
      * @return true iff the calling thread was the first to stop the traversal.
      */
     boolean stopTraversal() {
         boolean firstToStop = stopSignal.compareAndSet(false, true);
-        if (firstToStop) {
-            stopSelectable.complete(null);
-            stopSelectableSelectable.complete(null);
-        }
         endNotStartedWalks();
         return firstToStop;
     }
@@ -108,11 +106,8 @@ class SagaTraversal {
     }
 
     private SagaTraversalResult traverse(boolean forward, SagaNode firstNode, Function<SagaTraversalElement, Object> visit, boolean inline) {
-        BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk = new LinkedBlockingQueue<>();
-        ConcurrentHashMap<String, SelectableFuture<SelectableFuture<Object>>> futureById = new ConcurrentHashMap<>();
-        ConcurrentHashMap<String, SagaNode> visitedById = new ConcurrentHashMap<>();
-        visitedById.putIfAbsent(firstNode.id, firstNode);
-        Walk first = new Walk(forward, firstNode, new LinkedList<>(), visitedById, futureById, futureThreadWalk, visit);
+        Graph graph = new Graph(forward, visit);
+        Walk first = new Walk(graph, firstNode, new LinkedList<>());
         if (inline) {
             walks.started();
             first.claim();
@@ -124,7 +119,63 @@ class SagaTraversal {
                 // rejected: the failure travels through the saga's futures, as any other failure does
             }
         }
-        return new SagaTraversalResult(saga, futureThreadWalk, futureById);
+        return new SagaTraversalResult(saga, graph.futureThreadWalk, graph.futureById);
+    }
+
+    /**
+     * The state of one traversal that its walks share.
+     */
+    private static final class Graph {
+        final boolean forward;
+        final Function<SagaTraversalElement, Object> visit;
+        // per node: the nodes it depends on that have not signalled yet; created by the first signal
+        final ConcurrentMap<String, AtomicInteger> waitingById = new ConcurrentHashMap<>();
+        // per node: the ancestors of the first node to signal it, which become the node's own ancestors
+        final ConcurrentMap<String, Deque<SagaNode>> ancestorsById = new ConcurrentHashMap<>();
+        // per node: the result of its visit, completed before the node signals the nodes that depend on it
+        final ConcurrentHashMap<String, SelectableFuture<SelectableFuture<Object>>> futureById = new ConcurrentHashMap<>();
+        final BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk = new LinkedBlockingQueue<>();
+
+        Graph(boolean forward, Function<SagaTraversalElement, Object> visit) {
+            this.forward = forward;
+            this.visit = visit;
+        }
+
+        Collection<SagaNode> dependencies(SagaNode node) {
+            return forward ? node.incoming : node.outgoing;
+        }
+
+        Collection<SagaNode> dependents(SagaNode node) {
+            return forward ? node.outgoing : node.incoming;
+        }
+
+        /**
+         * Signals a node that one of the nodes it depends on has been visited.
+         *
+         * @return true for the one signal that was the last the node waited for
+         */
+        boolean signal(SagaNode node, Deque<SagaNode> signallerAncestors) {
+            ancestorsById.putIfAbsent(node.id, signallerAncestors);
+            AtomicInteger waiting = waitingById.computeIfAbsent(node.id, id -> new AtomicInteger(dependencies(node).size()));
+            return waiting.decrementAndGet() == 0;
+        }
+
+        /**
+         * The outputs of the nodes a node depends on. Called only once they have all signalled, so every visit
+         * future is done: nothing here waits.
+         */
+        Map<SagaNode, Object> outputsOfDependencies(SagaNode node) {
+            Map<SagaNode, Object> outputByNode = new LinkedHashMap<>();
+            for (SagaNode dependency : dependencies(node)) {
+                SelectableFuture<SelectableFuture<Object>> visited = futureById.get(dependency.id);
+                if (visited == null || !visited.isDone()) {
+                    throw new IllegalStateException("node " + node.id + " was started before " + dependency.id
+                            + ", a node it depends on, was visited");
+                }
+                outputByNode.put(dependency, visited.join().join()); // done and successful: never blocks or throws
+            }
+            return outputByNode;
+        }
     }
 
     /**
@@ -165,30 +216,20 @@ class SagaTraversal {
                 walks.ended();
             }
         });
-        walk.futureThreadWalk.add(future);
+        walk.graph.futureThreadWalk.add(future);
     }
 
     private final class Walk implements Callable<List<String>> {
-        final boolean forward;
+        final Graph graph;
         final SagaNode node;
         final Deque<SagaNode> ancestors;
-        final ConcurrentMap<String, SagaNode> visitedById;
-        final ConcurrentMap<String, SelectableFuture<SelectableFuture<Object>>> futureById;
-        final BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk;
-        final Function<SagaTraversalElement, Object> visit;
         volatile Thread submitter; // the thread inside submit(); a walk run on it runs inline
         volatile int claimed;
 
-        Walk(boolean forward, SagaNode node, Deque<SagaNode> ancestors, ConcurrentMap<String, SagaNode> visitedById,
-             ConcurrentMap<String, SelectableFuture<SelectableFuture<Object>>> futureById,
-             BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk, Function<SagaTraversalElement, Object> visit) {
-            this.forward = forward;
+        Walk(Graph graph, SagaNode node, Deque<SagaNode> ancestors) {
+            this.graph = graph;
             this.node = node;
             this.ancestors = ancestors;
-            this.visitedById = visitedById;
-            this.futureById = futureById;
-            this.futureThreadWalk = futureThreadWalk;
-            this.visit = visit;
         }
 
         /**
@@ -223,7 +264,7 @@ class SagaTraversal {
          */
         List<String> run() {
             try {
-                return traverse(new ArrayList<>(), forward, node, ancestors, visitedById, futureById, futureThreadWalk, visit);
+                return traverse(new ArrayList<>(), graph, node, ancestors);
             } catch (Throwable t) {
                 walkFailed(t);
                 throw Utils.launder(t);
@@ -238,15 +279,11 @@ class SagaTraversal {
 
     private static final AtomicIntegerFieldUpdater<Walk> CLAIMED = AtomicIntegerFieldUpdater.newUpdater(Walk.class, "claimed");
 
-    private List<String> traverse(
-            List<String> traversedInThread,
-            boolean forward,
-            SagaNode node,
-            Deque<SagaNode> ancestors,
-            ConcurrentMap<String, SagaNode> visitedById,
-            ConcurrentMap<String, SelectableFuture<SelectableFuture<Object>>> futureById,
-            BlockingQueue<SelectableFuture<List<String>>> futureThreadWalk,
-            Function<SagaTraversalElement, Object> visit) {
+    /**
+     * Visits a node whose dependencies have all been visited, then signals the nodes that depend on it, and goes on
+     * with those that the signal started.
+     */
+    private List<String> traverse(List<String> traversedInThread, Graph graph, SagaNode node, Deque<SagaNode> ancestors) {
 
         traversedInThread.add(node.id);
 
@@ -255,58 +292,12 @@ class SagaTraversal {
         }
 
         /*
-         * Wait for visitation of all nodes this node depends on to complete
-         */
-        Map<SagaNode, Object> outputByNode = new LinkedHashMap<>();
-        if ((forward ? node.incoming.size() : node.outgoing.size()) > 0) {
-            // Add to selector all visitation-futures this node depends on
-            FutureSelector<SelectableFuture<Object>, SagaNode> selectorSelector = new FutureSelector<>();
-            for (SagaNode dependOnNode : (forward ? node.incoming : node.outgoing)) {
-                SelectableFuture<SelectableFuture<Object>> dependOnSimpleFuture = futureById.computeIfAbsent(dependOnNode.id, k -> new SelectableFuture<>(() -> null));
-                selectorSelector.add(dependOnSimpleFuture, dependOnNode);
-            }
-            selectorSelector.add(stopSelectableSelectable, null);
-            FutureSelector<Object, SagaNode> selector = new FutureSelector<>();
-            while (selectorSelector.moreThanOnePending()) {
-                Selection<SelectableFuture<Object>, SagaNode> selected = selectorSelector.select();
-                if (stopSignal.get()) {
-                    return traversedInThread;
-                }
-                SelectableFuture<Object> selectableFuture;
-                try {
-                    selectableFuture = selected.future.join(); // done: never blocks
-                } catch (CompletionException e) {
-                    throw dependencyFailure(e); // a node this one depends on failed: end this walk
-                }
-                selector.add(selectableFuture, selected.control);
-            }
-            // Use selector to collect all visitation results
-            selector.add(stopSelectable, null);
-            while (selector.moreThanOnePending()) {
-                Selection<Object, SagaNode> selected = selector.select(); // block until a result is available
-                if (stopSignal.get()) {
-                    return traversedInThread;
-                }
-                Object output;
-                try {
-                    output = selected.future.join(); // done: never blocks
-                } catch (CompletionException e) {
-                    throw dependencyFailure(e);
-                }
-                outputByNode.put(selected.control, output);
-            }
-        }
-
-        if (stopSignal.get()) {
-            return traversedInThread;
-        }
-
-        /*
          * Visit this node within the walking thread
          */
-        SelectableFuture<SelectableFuture<Object>> futureResult = futureById.computeIfAbsent(node.id, k -> new SelectableFuture<>(() -> null));
+        Map<SagaNode, Object> outputByNode = graph.outputsOfDependencies(node);
+        SelectableFuture<SelectableFuture<Object>> futureResult = graph.futureById.computeIfAbsent(node.id, k -> new SelectableFuture<>(() -> null));
         try {
-            Object result = visit.apply(new SagaTraversalElement(outputByNode, ancestors, node));
+            Object result = graph.visit.apply(new SagaTraversalElement(outputByNode, ancestors, node));
             SelectableFuture<Object> selectableFuture = new SelectableFuture<>(() -> result);
             selectableFuture.run();
             futureResult.complete(selectableFuture);
@@ -320,44 +311,27 @@ class SagaTraversal {
         }
 
         /*
-         * Traverse children
+         * Signal the nodes that depend on this one; a node that has now had every signal it waits for is started
          */
-        List<SagaNode> effectiveChildren = new ArrayList<>();
-        for (SagaNode child : (forward ? node.outgoing : node.incoming)) {
-            if (visitedById.putIfAbsent(child.id, child) != null) {
-                continue; // someone else is already traversing this child in parallel
+        List<SagaNode> started = new ArrayList<>();
+        for (SagaNode dependent : graph.dependents(node)) {
+            Deque<SagaNode> dependentAncestors = new LinkedList<>(ancestors);
+            dependentAncestors.addLast(node);
+            if (graph.signal(dependent, dependentAncestors)) {
+                started.add(dependent);
             }
-            // first traversal of child
-            effectiveChildren.add(child);
         }
-        if (effectiveChildren.isEmpty()) {
-            return traversedInThread; // no children, or children already being traversed in parallel
+        if (started.isEmpty()) {
+            return traversedInThread; // no dependents, or they wait for other nodes, whose walks will start them
         }
-        // traverse all but last child asynchronously; each walk has its own ancestors, not shared with its siblings
-        for (int i = 0; i < effectiveChildren.size() - 1; i++) {
-            Deque<SagaNode> childAncestors = new LinkedList<>(ancestors);
-            childAncestors.addLast(node);
-            submit(new Walk(forward, effectiveChildren.get(i), childAncestors, visitedById, futureById, futureThreadWalk, visit));
+        // all but the last on new walks; each walk has its own ancestors, not shared with its siblings
+        for (int i = 0; i < started.size() - 1; i++) {
+            SagaNode dependent = started.get(i);
+            submit(new Walk(graph, dependent, graph.ancestorsById.get(dependent.id)));
         }
 
-        // traverse last child within this thread
-        Deque<SagaNode> childAncestors = new LinkedList<>(ancestors);
-        childAncestors.addLast(node);
-        return traverse(traversedInThread, forward, effectiveChildren.get(effectiveChildren.size() - 1), childAncestors, visitedById, futureById, futureThreadWalk, visit);
-    }
-
-    /**
-     * The failure of a node this walk depends on, as that node's walk threw it. Every walk that sees a failure
-     * reports the same exception, so the saga fails with it, whichever of them is first.
-     */
-    private static RuntimeException dependencyFailure(CompletionException e) {
-        Throwable cause = e.getCause();
-        if (cause instanceof RuntimeException) {
-            return (RuntimeException) cause;
-        }
-        if (cause instanceof Error) {
-            throw (Error) cause;
-        }
-        return Utils.launder(cause == null ? e : cause);
+        // the last within this walk
+        SagaNode last = started.get(started.size() - 1);
+        return traverse(traversedInThread, graph, last, graph.ancestorsById.get(last.id));
     }
 }

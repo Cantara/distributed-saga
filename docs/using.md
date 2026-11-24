@@ -81,8 +81,9 @@ SelectableThreadPoolExecutor pool = new SelectableThreadPoolExecutor(
         10, 10, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
 ```
 
-Size it for the number of branches of all sagas that run at the same time: a walk waiting at a join node, or for a
-saga-log write, holds its thread, and with an unbounded queue the pool does not grow past its core size. Limit how
+Size it for the number of branches of all sagas you want to run at the same time: a walk that runs an action, or
+waits for a saga-log write, holds its thread, and with an unbounded queue the pool does not grow past its core size.
+A join holds no thread, so a smaller pool makes sagas slower, not stuck. Limit how
 many sagas you run at once in your application; the library does not. Keep the default `AbortPolicy`, or another
 policy that does not run tasks on the submitting thread (`CallerRunsPolicy` makes the sagas fail). See
 [Architecture](architecture.md#threading).

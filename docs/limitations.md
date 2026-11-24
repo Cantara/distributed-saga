@@ -9,8 +9,8 @@ Only `AbortSagaException` rolls a saga back. If an action (or a saga-log write, 
 anything else:
 
 - no `Abort` entry is written and nothing is compensated;
-- the failure stops the saga: walks waiting at a join node return and free their pool threads, and no walk starts a
-  new node (up to 2.1.0, only an abort did this, and a walk waiting at a join for a node behind the failed one
+- the failure stops the saga: no walk starts a new node, and the nodes that depend on the failed one are never
+  started (up to 2.1.0, only an abort stopped the saga, and a walk waiting at a join for a node behind the failed one
   stayed blocked for ever);
 - an action that is already running on another branch runs to its end and writes its `End` entry; the saga reports
   completion only after that, once no walk of it can run an action or write to the log any more, so `onComplete` sees
@@ -29,10 +29,14 @@ completion too (see [No timeouts](#no-timeouts)).
 
 ## Thread starvation
 
-A walk that reaches a join node waits on its pool thread. If the pool has fewer threads than the branches that wait
-at the same time, the walks that would complete the join stay in the queue, and the saga stops. A
-`ThreadPoolExecutor` with an unbounded queue never adds threads above its core size. Size the core of the pool for the
-widest saga times the number of sagas you run at once.
+Since 2.1.5, a join node holds no pool thread while it waits: each node it depends on signals it when done, and
+the walk of the last one starts it. A pool with fewer threads than the branches that run at the same time makes the
+sagas slower, not stuck; a saga needs one thread to make progress. Up to 2.1.4, a walk that reached a join waited on
+its pool thread, and a pool with fewer threads than the waiting branches deadlocked, rollback included.
+
+Threads are still held while an action runs and while a saga-log write or read runs (see
+[Pool threads](#pool-threads-and-how-many-sagas-run-at-once)). A `ThreadPoolExecutor` with an unbounded queue never
+adds threads above its core size, so its core size is how many branches run at once.
 
 ## A compensating action that fails
 
@@ -61,8 +65,8 @@ none. See [sagalog-postgres](modules/sagalog-postgres.md#timeouts-and-tls).
 
 ## Pool threads, and how many sagas run at once
 
-Every walk of a saga holds a pool thread while it runs an action, waits at a join node, or waits for a saga-log write
-or read: two log round trips for each node, one each for `S` and `E`, and two for each compensated node plus one read
+Every walk of a saga holds a pool thread while it runs an action or waits for a saga-log write or read (a join holds
+none): two log round trips for each node, one each for `S` and `E`, and two for each compensated node plus one read
 in a rollback. `executeSaga` only submits the first walk and returns; it does not limit how many sagas run. Limiting
 concurrent executions is the application's job (a semaphore around `executeSaga` released on completion, for
 example), as is sizing the pool for them (see [Thread starvation](#thread-starvation)). With an unbounded queue, walks
