@@ -18,13 +18,16 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * One traversal of a saga's graph, forward or backward: one walk at the first node, one more walk per extra branch.
@@ -34,6 +37,13 @@ import java.util.function.Function;
  * and the signal that brings a node's count to zero starts that node: on the same walk for one of them, on a new walk
  * for each other. So a join is started by the walk of the last node it depends on, and holds no pool thread while it
  * waits; a pool smaller than the saga's branches makes the saga slower, not stuck.
+ * <p>
+ * A visit whose step runs asynchronously returns a {@link Pending}: the walk ends, and the step is counted as a walk
+ * from then on. The thread that completes the stage only submits a new walk to the pool, which takes over that count,
+ * runs the rest of the visit and goes on from there. So the thread that completes the stage never ends a count, and
+ * never finds the saga idle: the rollback, or the completion of a failed saga, never runs on it (unless the pool
+ * rejects the new walk: it is shut down, or its queue is bounded and full). That walk is never dropped when the traversal stops, so a step that ran is
+ * always finished (its End entry written), as a synchronous step is.
  * <p>
  * Every walk is counted in the execution's {@link SagaWalks} from just before it is submitted until it has ended or
  * is known never to run. A walk that fails stops the traversal (se-1): no walk starts a new node, and the nodes that
@@ -167,6 +177,20 @@ class SagaTraversal {
     }
 
     /**
+     * What a visit returns when its step runs asynchronously: the step's stage, and the rest of the visit, which runs on
+     * the pool with the stage's value or failure once the stage has completed, and returns the node's output or throws.
+     */
+    static final class Pending {
+        final CompletionStage<?> stage;
+        final BiFunction<Object, Throwable, Object> continuation;
+
+        Pending(CompletionStage<?> stage, BiFunction<Object, Throwable, Object> continuation) {
+            this.stage = stage;
+            this.continuation = continuation;
+        }
+    }
+
+    /**
      * The state of one traversal that its walks share.
      */
     private static final class Graph {
@@ -230,16 +254,19 @@ class SagaTraversal {
     }
 
     /**
-     * Submits a walk, counted until it ends. A rejected walk fails the saga and is rethrown.
+     * Submits a walk, counted until it ends. A rejected walk fails the saga and is rethrown. A walk that continues a
+     * step that ran is not dropped when the traversal stops: it finishes the step.
      */
     private void submit(Walk walk) {
-        walks.started();
-        notStarted.add(walk);
+        if (walk.resume == null) {
+            walks.started();
+            notStarted.add(walk);
+        } // else: a walk that finishes an asynchronous step takes over the count the step holds
         walk.submitter = Thread.currentThread();
         SelectableFuture<List<String>> future;
         try {
             future = executorService.submit(walk);
-        } catch (RuntimeException e) {
+        } catch (Throwable e) { // a rejection, or an Error: the walk never runs, so its count ends here
             if (walk.claim()) {
                 notStarted.remove(walk);
                 walkFailed(e);
@@ -255,6 +282,7 @@ class SagaTraversal {
             notStarted.remove(walk);
             RejectedExecutionException rejected = new RejectedExecutionException("a walk of saga " + saga.name
                     + " at node " + walk.node.id + " was discarded: the executor is shut down");
+            walk.notRun(rejected);
             walkFailed(rejected);
             walks.ended();
             throw rejected;
@@ -263,6 +291,7 @@ class SagaTraversal {
         future.whenComplete((result, failure) -> {
             if (failure != null && walk.claim()) {
                 notStarted.remove(walk);
+                walk.notRun(failure);
                 walkFailed(failure);
                 walks.ended();
             }
@@ -274,13 +303,20 @@ class SagaTraversal {
         final Graph graph;
         final SagaNode node;
         final Deque<SagaNode> ancestors;
+        // the rest of the node's visit, once its asynchronous step has completed; null for a walk that visits the node
+        final Supplier<Object> resume;
         volatile Thread submitter; // the thread inside submit(); a walk run on it runs inline
         volatile int claimed;
 
         Walk(Graph graph, SagaNode node, Deque<SagaNode> ancestors) {
+            this(graph, node, ancestors, null);
+        }
+
+        Walk(Graph graph, SagaNode node, Deque<SagaNode> ancestors, Supplier<Object> resume) {
             this.graph = graph;
             this.node = node;
             this.ancestors = ancestors;
+            this.resume = resume;
         }
 
         /**
@@ -288,6 +324,17 @@ class SagaTraversal {
          */
         boolean claim() {
             return CLAIMED.compareAndSet(this, 0, 1);
+        }
+
+        /**
+         * The walk ends without having run. A walk that would finish an asynchronous step leaves the step's node
+         * running and its visit future open: the node's visit fails with the reason.
+         */
+        void notRun(Throwable reason) {
+            if (resume != null) {
+                graph.running.remove(node.id);
+                graph.futureById.get(node.id).completeExceptionally(reason);
+            }
         }
 
         @Override
@@ -301,6 +348,7 @@ class SagaTraversal {
                         + " at node " + node.id + " was to run on the thread that submitted it; the executor's "
                         + "rejection policy must not run tasks on the submitting thread");
                 try {
+                    notRun(rejected);
                     walkFailed(rejected);
                 } finally {
                     walks.ended();
@@ -315,7 +363,9 @@ class SagaTraversal {
          */
         List<String> run() {
             try {
-                return traverse(new ArrayList<>(), graph, node, ancestors);
+                return resume == null
+                        ? traverse(new ArrayList<>(), graph, node, ancestors)
+                        : resumed(new ArrayList<>(), graph, node, ancestors, resume);
             } catch (Throwable t) {
                 walkFailed(t);
                 throw Utils.launder(t);
@@ -346,19 +396,84 @@ class SagaTraversal {
          * Visit this node within the walking thread
          */
         Map<SagaNode, Object> outputByNode = graph.outputsOfDependencies(node);
-        SelectableFuture<SelectableFuture<Object>> futureResult = graph.futureById.computeIfAbsent(node.id, k -> new SelectableFuture<>(() -> null));
+        graph.futureById.computeIfAbsent(node.id, k -> new SelectableFuture<>(() -> null));
         graph.running.add(node.id);
+        Object result;
         try {
-            Object result = graph.visit.apply(new SagaTraversalElement(outputByNode, ancestors, node));
-            SelectableFuture<Object> selectableFuture = new SelectableFuture<>(() -> result);
-            selectableFuture.run();
-            futureResult.complete(selectableFuture);
+            result = graph.visit.apply(new SagaTraversalElement(outputByNode, ancestors, node));
         } catch (Throwable t) {
-            futureResult.completeExceptionally(t);
-            throw Utils.launder(t);
-        } finally {
-            graph.running.remove(node.id);
+            throw visitFailed(graph, node, t);
         }
+        if (result instanceof Pending pending) {
+            resumeWhenDone(graph, node, ancestors, pending);
+            return traversedInThread; // this walk ends; a new one finishes the visit when the step has completed
+        }
+        return visited(traversedInThread, graph, node, ancestors, result);
+    }
+
+    /**
+     * Finishes the visit of a node whose asynchronous step has completed, on the walk the stage's completion submitted,
+     * and goes on from there.
+     */
+    private List<String> resumed(List<String> traversedInThread, Graph graph, SagaNode node, Deque<SagaNode> ancestors, Supplier<Object> resume) {
+        Object result;
+        try {
+            result = resume.get();
+        } catch (Throwable t) {
+            throw visitFailed(graph, node, t);
+        }
+        return visited(traversedInThread, graph, node, ancestors, result);
+    }
+
+    /**
+     * A visit failed: the node's visit future fails with it, and the walk fails.
+     */
+    private static RuntimeException visitFailed(Graph graph, SagaNode node, Throwable t) {
+        graph.running.remove(node.id);
+        graph.futureById.get(node.id).completeExceptionally(t);
+        return Utils.launder(t);
+    }
+
+    /**
+     * Counts the node's asynchronous step as a walk, and has the stage's completion submit a walk that finishes the
+     * visit. On the thread that completes the stage, nothing else runs: the saga continues on its pool.
+     */
+    private void resumeWhenDone(Graph graph, SagaNode node, Deque<SagaNode> ancestors, Pending pending) {
+        walks.started(); // the step counts as a walk; the walk that finishes it takes the count over
+        // the step, for SagaTraversalResult: done once the walk that finishes it is in the queue (or failed), so a
+        // wait for the walks never sees them all done while the step runs
+        SelectableFuture<List<String>> step = new SelectableFuture<>(Collections::emptyList);
+        graph.futureThreadWalk.add(step);
+        try {
+            pending.stage.whenComplete((value, failure) -> {
+                try {
+                    submit(new Walk(graph, node, ancestors, () -> pending.continuation.apply(value, failure)));
+                    step.complete(Collections.emptyList());
+                } catch (Throwable rejected) {
+                    // submit has failed the saga and ended the count; the node's visit fails with it
+                    graph.running.remove(node.id);
+                    graph.futureById.get(node.id).completeExceptionally(rejected);
+                    step.completeExceptionally(rejected);
+                }
+            });
+        } catch (Throwable t) { // a stage that refuses the callback
+            graph.running.remove(node.id);
+            graph.futureById.get(node.id).completeExceptionally(t);
+            step.completeExceptionally(t);
+            walkFailed(t);
+            walks.ended();
+        }
+    }
+
+    /**
+     * The node's visit has ended with its output: completes its visit future, then signals the nodes that depend on it,
+     * and goes on with those that the signal started.
+     */
+    private List<String> visited(List<String> traversedInThread, Graph graph, SagaNode node, Deque<SagaNode> ancestors, Object result) {
+        SelectableFuture<Object> selectableFuture = new SelectableFuture<>(() -> result);
+        selectableFuture.run();
+        graph.futureById.get(node.id).complete(selectableFuture);
+        graph.running.remove(node.id);
 
         if (stopSignal.get()) {
             return traversedInThread;

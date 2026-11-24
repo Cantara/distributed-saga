@@ -163,6 +163,52 @@ Rules for adapters:
   constructor") when the output type has no public `String` constructor, or the constructor throws (then that is the
   cause).
 
+### Asynchronous adapters
+
+An action that waits for I/O holds a pool thread for as long as it waits. `AsyncSagaAdapter<O>` returns a
+`CompletionStage` instead, and holds no pool thread while the work runs:
+
+```java
+class PublishToTxLog implements AsyncSagaAdapter<JsonNode> {
+    public String name() { return "PublishToTxLog"; }
+    public CompletionStage<JsonNode> executeActionAsync(SagaNode node, Object input, Map<SagaNode, Object> dependeesOutput) {
+        return producer.publishAsync(toMessage(input)).thenApply(ignored -> null); // completes on the producer's thread
+    }
+    public CompletionStage<Void> executeCompensatingActionAsync(SagaNode node, Object input, JsonNode output) { ... }
+    public boolean hasCompensatingAction() { return true; }
+    public ActionOutputSerializer<JsonNode> serializer() { return JSON_SERIALIZER; }
+}
+```
+
+An RxJava `Completable` or `Single` becomes a stage with `toCompletionStage(...)`. Register it like any adapter;
+synchronous and asynchronous adapters mix freely in one saga. The engine never calls an asynchronous adapter's
+synchronous methods (their defaults throw `UnsupportedOperationException`).
+
+What the engine does, and promises:
+
+- `Start` is written, durably, before `executeActionAsync` is called. The walk then ends, and the pool thread is free.
+- The thread that completes the stage does one thing: it hands the rest of the node to the saga's pool. `End`, the
+  `postAction`, the next nodes, the rollback and `onComplete` never run on the caller's threads (an RxJava scheduler,
+  a driver's threads). `End` is written before the next nodes start.
+- The engine only reads the stage: it attaches one callback, and never completes, cancels or blocks on it.
+- A stage that fails with `AbortSagaException` (also inside a `CompletionException`) rolls the saga back, as a thrown
+  one does; so does an `AbortSagaException` thrown by `executeActionAsync` itself. Any other failure fails the saga
+  with that exception; a checked one is wrapped in a `CompletionException`. A `null` stage fails the saga with
+  `NullPointerException`.
+- While the stage has not completed, the step counts as running (`getState()` shows it): a rollback, or the
+  completion of a failed saga, waits for it, and the step's `End` is always written, also after the saga was stopped.
+  A stage that never completes keeps the saga open, as a synchronous action that never returns does; put a timeout
+  on the stage (`orTimeout`) if it can hang.
+- Compensations work the same way: `CompStart` before `executeCompensatingActionAsync`, `Comp` after its stage.
+- `preAction` runs on the pool thread that starts the step; `postAction` on the pool thread that finishes it, which
+  may be another one.
+- If the pool rejects the rest of the node (it is shut down, or its queue is bounded and full), the saga fails with
+  `RejectedExecutionException`, as any failure does, and `End` is not written although the step's work is done:
+  recovery finds the node started but not ended, and runs the step again. A synchronous step
+  cannot end this way, since its walk is rejected before it starts. So with asynchronous steps, give the pool a queue
+  that does not reject while it runs (an unbounded one, as the examples use). Only after such a rejection can
+  `onComplete` run on the thread that completed the stage.
+
 ## Behaviour to know
 
 See [Known limitations](../limitations.md) for exceptions other than abort, thread starvation, a compensating action

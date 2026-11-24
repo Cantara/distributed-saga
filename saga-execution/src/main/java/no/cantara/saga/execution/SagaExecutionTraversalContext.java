@@ -9,7 +9,9 @@ import java.util.Map;
 /**
  * What the {@code preAction} and {@code postAction} callbacks of
  * {@link SagaExecution#executeSaga(String, Object, boolean, java.util.function.Consumer, java.util.function.Consumer, java.util.function.Consumer)}
- * get for a node. The callbacks run on the thread of the walk that visits the node.
+ * get for a node. The callbacks run on the thread of the walk that visits the node. For an asynchronous step
+ * ({@link no.cantara.saga.execution.adapter.AsyncSagaAdapter}), {@code postAction} runs on the pool thread of the walk
+ * that finishes the step once its stage has completed, which may be another thread than the {@code preAction}'s.
  */
 public class SagaExecutionTraversalContext {
     private final Map<SagaNode, Object> outputByNode;
