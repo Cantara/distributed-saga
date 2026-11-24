@@ -3,6 +3,7 @@ package no.cantara.sagalog;
 import no.cantara.sagalog.memory.MemorySagaLogPool;
 import org.testng.annotations.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -326,6 +327,60 @@ public class AbstractSagaLogPoolLifecycleTest {
         assertNotNull(log);
         assertEquals(log.id(), b, "the free log is handed out next");
         pool.shutdown();
+    }
+
+    @Test
+    public void thatALogOwnedBeforeItIsRegisteredIsNotAvailableUntilReleased() throws Exception {
+        TestPool pool = new TestPool();
+        SagaLogOwner owner = new SagaLogOwner("owner");
+        SagaLogId a = pool.idFor("test-instance", "a");
+        assertNotNull(pool.tryTakeOwnership(owner, a));
+        assertEquals(pool.registerInstanceLocalIdFor("a"), a);
+        assertEquals(available(pool), List.of(), "an owned log is not in the queue for tryAcquire");
+
+        pool.releaseOwnership(owner, a);
+        assertEquals(available(pool), List.of(a), "released, it is available, once");
+        pool.shutdown();
+    }
+
+    @Test
+    public void thatALogWhoseDirectTakeFailsIsAvailableAgainAfterATryAcquireSkippedIt() throws Exception {
+        TestPool pool = new TestPool();
+        SagaLogId x = pool.registerInstanceLocalIdFor("x");
+        java.util.concurrent.CountDownLatch inConnect = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch fail = new java.util.concurrent.CountDownLatch(1);
+        pool.connector = id -> {
+            inConnect.countDown();
+            try {
+                assertTrue(fail.await(10, TimeUnit.SECONDS));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            throw new SagaLogBusyException("held by another process: " + id);
+        };
+        java.util.concurrent.CompletableFuture<Throwable> take = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try {
+                pool.tryTakeOwnership(new SagaLogOwner("direct"), x);
+                return null;
+            } catch (Throwable t) {
+                return t;
+            }
+        });
+        assertTrue(inConnect.await(10, TimeUnit.SECONDS));
+        assertEquals(pool.tryAcquire(new SagaLogOwner("other")), null, "x's permit is held: tryAcquire polls and skips it");
+        assertEquals(available(pool), List.of(), "x is out of the queue meanwhile");
+
+        fail.countDown();
+        assertTrue(take.get(10, TimeUnit.SECONDS) instanceof SagaLogBusyException);
+        assertEquals(available(pool), List.of(x), "the failed take puts x back, once");
+        pool.shutdown();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<SagaLogId> available(AbstractSagaLogPool pool) throws Exception {
+        java.lang.reflect.Field field = AbstractSagaLogPool.class.getDeclaredField("availableInstanceLocalIds");
+        field.setAccessible(true);
+        return new ArrayList<>((java.util.Collection<SagaLogId>) field.get(pool));
     }
 
     @Test

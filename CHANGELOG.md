@@ -34,6 +34,15 @@
   nothing.
 
 ### Fixed
+- **A saga-log pool never leaves an owned log in the `tryAcquire` queue.** The pool keeps a registered log in the
+  queue exactly when nobody owns it. Two paths broke that. Registering a log that was already owned
+  (`tryTakeOwnership` before `registerInstanceLocalIdFor`) queued it anyway. And `tryTakeOwnership` removed the log
+  from the queue without the queue's lock, so a release or a failed connect that checked the log as unowned before
+  the take could add it after the removal. Both now go through the same lock. The effect was small: a later
+  `tryAcquire` met the owned log, skipped it, and the queue healed on release. The other half of the rule broke too:
+  a direct `tryTakeOwnership` whose connect failed never put the log back, so if a `tryAcquire` had polled and skipped
+  it meanwhile, it stayed out of the queue, unowned, until someone took and released it by id. A failed take now
+  makes the log available again.
 - **A saga log held by another process no longer keeps the free logs from being acquired.** A registered log that
   failed to connect (`SagaLogBusyException`: another process holds its file lock or its PostgreSQL advisory lock) went
   back to the front of the available logs, so every later `tryAcquire`, timed or not, took it again and threw: the

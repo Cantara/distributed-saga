@@ -143,7 +143,7 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
     public SagaLogId registerInstanceLocalIdFor(String logName) {
         SagaLogId sagaLogId = idFor(clusterInstanceId, logName);
         if (registeredInstanceLocalSagaLogIds.add(sagaLogId)) {
-            availableInstanceLocalIds.add(sagaLogId);
+            makeAvailable(sagaLogId); // unless it is owned already: taken with tryTakeOwnership before it was registered
         }
         return sagaLogId;
     }
@@ -271,7 +271,9 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
 
     /**
      * A registered instance-local log is available (in the queue for tryAcquire) exactly when nobody owns it, and is
-     * in the queue at most once. It joins the queue at the back.
+     * in the queue at most once. It joins the queue at the back. The check and the add hold the queue's monitor, and so
+     * does {@link #removeAvailable}, which runs after the log's permit is taken: a log is never left queued while it is
+     * owned.
      */
     private void makeAvailable(SagaLogId logId) {
         if (!registeredInstanceLocalSagaLogIds.contains(logId)) {
@@ -284,6 +286,15 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
                 return;
             }
             availableInstanceLocalIds.addLast(logId);
+        }
+    }
+
+    /**
+     * The log is owned now (its permit is taken): it is not available until released.
+     */
+    private void removeAvailable(SagaLogId logId) {
+        synchronized (availableInstanceLocalIds) {
+            availableInstanceLocalIds.remove(logId);
         }
     }
 
@@ -308,19 +319,7 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
         if (!semaphore.tryAcquire()) {
             return null; // lock unavailable
         }
-        SagaLog sagaLog = null;
-        try {
-            if (semaphore.availablePermits() > 0) {
-                throw new IllegalStateException("More than one permit available. Most likely the saga-log was released when no ownership or lock/permit is held.");
-            }
-            sagaLog = doAssignPoolLocalOwnership(owner, logId);
-            availableInstanceLocalIds.remove(logId); // owned: not available until released
-            return sagaLog;
-        } finally {
-            if (sagaLog == null) {
-                exclusiveLockByLogId.get(logId).release();
-            }
-        }
+        return ownWithPermit(owner, logId, semaphore, "More than one permit available. Most likely the saga-log was released when no ownership or lock/permit is held.");
     }
 
     /**
@@ -335,17 +334,27 @@ public abstract class AbstractSagaLogPool implements SagaLogPool {
         if (!semaphore.tryAcquire(timeout, unit)) {
             return null; // timeout
         }
+        return ownWithPermit(owner, logId, semaphore, "Acquired permit, but there are still permits available. Someone has released this saga-log-id when no ownership or lock/permit is held.");
+    }
+
+    /**
+     * With the log's permit taken: connects the log, records the ownership and takes the log out of the tryAcquire
+     * queue. On any failure the permit is given back, and a registered log is made available again: a tryAcquire may
+     * have polled and skipped it while the permit was held.
+     */
+    private SagaLog ownWithPermit(SagaLogOwner owner, SagaLogId logId, Semaphore semaphore, String extraPermitMessage) {
         SagaLog sagaLog = null;
         try {
             if (semaphore.availablePermits() > 0) {
-                throw new IllegalStateException("Acquired permit, but there are still permits available. Someone has released this saga-log-id when no ownership or lock/permit is held.");
+                throw new IllegalStateException(extraPermitMessage);
             }
             sagaLog = doAssignPoolLocalOwnership(owner, logId);
-            availableInstanceLocalIds.remove(logId); // owned: not available until released
+            removeAvailable(logId);
             return sagaLog;
         } finally {
             if (sagaLog == null) {
-                exclusiveLockByLogId.get(logId).release();
+                semaphore.release();
+                makeAvailable(logId);
             }
         }
     }
