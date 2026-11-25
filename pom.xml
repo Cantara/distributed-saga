@@ -32,6 +32,13 @@
             <organization>Cantara</organization>
             <organizationUrl>https://www.cantara.no/</organizationUrl>
         </developer>
+        <developer>
+            <name>Ove Ranheim</name>
+            <email>ove.ranheim@gmail.com</email>
+            <url>https://www.linkedin.com/in/overanheim/</url>
+            <organization>Cantara</organization>
+            <organizationUrl>https://www.cantara.no/</organizationUrl>
+        </developer>
     </developers>
 
     <scm>
