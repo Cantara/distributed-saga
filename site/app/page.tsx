@@ -7,11 +7,17 @@ import { CodeCopy } from '../components/code-copy'
 import { RecoveryFigure, RollbackFigure, SagaGraphFigure } from '../components/figures'
 import { SectionHash } from '../components/section-hash'
 import { highlightCode } from '../lib/html'
+import { shareTags } from '../lib/share'
 import { site } from '../lib/krantho'
 
 export async function generateMetadata(): Promise<Metadata> {
   const seo = await resolveSeoContent('landing', 'home')
-  return { title: { absolute: seo.title }, description: seo.description, alternates: { canonical: '/' } }
+  return {
+    title: { absolute: seo.title },
+    description: seo.description,
+    alternates: { canonical: '/' },
+    ...shareTags(seo.title, seo.description, '/', 'website'),
+  }
 }
 
 const idOf = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
