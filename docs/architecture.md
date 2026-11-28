@@ -1,3 +1,10 @@
+---
+title: "Architecture"
+description: "The modules and their dependencies, Java modules and jlink, saga-log providers and service loading, threading, and the life of one saga execution."
+group: Overview
+order: 2
+---
+
 # Architecture
 
 ## Modules
@@ -26,7 +33,7 @@ future-selector        saga-api                    sagalog-api
 | `sagalog-api` | none | none |
 | `saga-execution` | `saga-api`, `sagalog-api`, `future-selector` | none |
 | `saga-serialization` | `saga-api` | `org.json:json` |
-| `sagalog-file` | `sagalog-api` | none (it has its own copy of Tape's `QueueFile`, see [NOTICE](../NOTICE)) |
+| `sagalog-file` | `sagalog-api` | none (it has its own copy of Tape's `QueueFile`, see [NOTICE](https://github.com/Cantara/distributed-saga/blob/main/NOTICE)) |
 | `sagalog-postgres` | `sagalog-api` | HikariCP, PostgreSQL JDBC driver, SLF4J API |
 | `saga-samples/polyglot-persistence` | all modules except `sagalog-postgres` | Undertow, org.json |
 | `saga-fault-matrix` (tests only, not deployed) | `saga-execution` and every saga-log provider | embedded PostgreSQL (test) |

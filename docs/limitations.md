@@ -1,3 +1,10 @@
+---
+title: "Known limitations"
+description: "Behaviour to design around before relying on the library in production: failures, threads, timeouts, the executor and the saga-log providers."
+group: Guides
+order: 12
+---
+
 # Known limitations
 
 These are behaviours of the current code that a user must design around. Each is described as it is today; none is

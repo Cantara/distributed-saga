@@ -1,3 +1,10 @@
+---
+title: "sagalog-api"
+description: "The saga-log SPI, the pool and its ownership rules, the memory log, and how to write a provider."
+group: Modules
+order: 4
+---
+
 # sagalog-api
 
 `no.cantara.saga:sagalog-api` · Java module `no.cantara.sagalog` · no dependencies
@@ -129,7 +136,7 @@ for (int i = 0; i < 16; i++) {
 
 SagaLog log = pool.tryAcquire(owner, 10, TimeUnit.SECONDS);   // per saga
 try {
-    // execute the saga; truncate the log in onComplete
+    // execute the saga; in onComplete, truncate the log once the saga is finished
 } finally {
     pool.releaseOwnership(owner, log.id());                   // after the saga is complete and the log is clean
 }

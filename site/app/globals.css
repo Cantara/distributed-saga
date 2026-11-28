@@ -1,0 +1,216 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1c1f24;
+  --muted: #5b6370;
+  --line: #e3e6ea;
+  --accent: #2f6fdb;
+  --code-bg: #f4f5f7;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418;
+    --fg: #e6e8eb;
+    --muted: #9aa3ae;
+    --line: #2a3038;
+    --accent: #7aa7f5;
+    --code-bg: #1b2027;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+a {
+  color: var(--accent);
+}
+
+.site-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+}
+
+.site-repo {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.site-repo:hover {
+  color: var(--accent);
+}
+
+.site-name {
+  align-items: center;
+  color: var(--fg);
+  display: flex;
+  font-weight: 700;
+  gap: 0.75rem;
+  text-decoration: none;
+}
+
+/* The Cantara mark: arcs and wordmark. Its colours are in the SVG, one palette per colour scheme */
+.site-logo {
+  border-right: 1px solid var(--line);
+  display: block;
+  height: 2.25rem;
+  padding-right: 0.75rem;
+  width: auto;
+}
+
+.site-body {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  padding: 1.5rem;
+}
+
+.sidebar h2 {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  margin: 1.25rem 0 0.5rem;
+  text-transform: uppercase;
+}
+
+.sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar li {
+  margin: 0.25rem 0;
+}
+
+.sidebar a {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.sidebar a:hover {
+  color: var(--accent);
+}
+
+main {
+  padding: 1.5rem 2rem 4rem;
+}
+
+.doc {
+  /* The docs hold wide tables and 118-column code: a wider column than prose alone needs */
+  max-width: 56rem;
+}
+
+.doc h1 {
+  font-size: 2.25rem;
+  line-height: 1.2;
+  margin: 0.5rem 0;
+}
+
+.lead {
+  color: var(--muted);
+  font-size: 1.15rem;
+}
+
+.prose code {
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+
+.prose pre {
+  background: var(--code-bg);
+  border-radius: 6px;
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+.prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.prose img {
+  max-width: 100%;
+}
+
+/* A wide table scrolls on its own, not the page */
+.prose table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid var(--line);
+  padding: 0.4rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: var(--code-bg);
+}
+
+/* A diagram drawn from a ```mermaid block; a wide one scrolls on its own */
+.prose .mermaid {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  gap: 0.5rem 1.5rem;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+}
+
+.pager {
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+}
+
+.pager a[rel='next'] {
+  margin-left: auto;
+}
+
+@media (max-width: 48rem) {
+  .site-body {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-bottom: 1px solid var(--line);
+    border-right: none;
+  }
+
+  main {
+    padding: 1.5rem 1rem 3rem;
+  }
+}

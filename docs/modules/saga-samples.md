@@ -1,3 +1,10 @@
+---
+title: "saga-samples"
+description: "The polyglot-persistence sample: one saga writing to several stores, run over HTTP, with recovery."
+group: Modules
+order: 8
+---
+
 # saga-samples
 
 `saga-samples` is a pom-only parent for sample applications. It has one sample, `polyglot-persistence`

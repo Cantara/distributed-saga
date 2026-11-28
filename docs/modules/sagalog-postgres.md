@@ -1,3 +1,10 @@
+---
+title: "sagalog-postgres"
+description: "A saga log in PostgreSQL: configuration, storage, ownership across processes, connections and failures."
+group: Modules
+order: 6
+---
+
 # sagalog-postgres
 
 `no.cantara.saga:sagalog-postgres` · Java module `no.cantara.sagalog.postgres` · depends on `sagalog-api`, HikariCP,
@@ -93,7 +100,7 @@ path of the RDS CA bundle (`global-bundle.pem`).
   36-character UUID text, `toBytes` the 16 bytes, big-endian.
 
 Tables made before 2.0.0 have `data json`. They keep working for JSON data; for other data, run once per table:
-`ALTER TABLE "<schema>"."<table>" ALTER COLUMN data TYPE text;` (see the [CHANGELOG](../../CHANGELOG.md)).
+`ALTER TABLE "<schema>"."<table>" ALTER COLUMN data TYPE text;` (see the [CHANGELOG](https://github.com/Cantara/distributed-saga/blob/main/CHANGELOG.md)).
 
 ### Names
 

@@ -1,3 +1,10 @@
+---
+title: "Development"
+description: "Building and testing the libraries, the project layout, conventions and releases."
+group: Reference
+order: 23
+---
+
 # Development
 
 ## Requirements
@@ -70,10 +77,10 @@ Module dependencies use `${project.version}`, so the reactor builds them togethe
 - **Providers.** A new saga-log provider registers its `SagaLogInitializer` in both `module-info.java` and
   `META-INF/services` (see [sagalog-api](modules/sagalog-api.md#writing-a-provider)).
 - **Compatibility.** The library is used by applications other than those in this repository. A change of behaviour,
-  of the public API, of a stored format or of a database schema goes in [CHANGELOG.md](../CHANGELOG.md), with what a
+  of the public API, of a stored format or of a database schema goes in [CHANGELOG.md](https://github.com/Cantara/distributed-saga/blob/main/CHANGELOG.md), with what a
   user must do to migrate.
 - **Third-party code.** Code copied from other projects keeps its copyright header, lists its changes at the top of the
-  file, and is attributed in [NOTICE](../NOTICE).
+  file, and is attributed in [NOTICE](https://github.com/Cantara/distributed-saga/blob/main/NOTICE).
 
 ## Releases
 
