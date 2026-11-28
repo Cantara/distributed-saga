@@ -6,7 +6,7 @@
 //
 // Each file carries its own palette, light and dark (prefers-color-scheme), so GitHub shows it in the reader's
 // system theme. The site puts the drawing into the page without that palette and colours its classes by the theme
-// the reader picked (site/app/globals.css, "Figures of the documentation").
+// the reader picked (site/app/globals.css, "A figure of docs/images").
 //
 // Run: node site/diagrams/generate.mjs (from the repository root or from site/)
 
@@ -65,7 +65,7 @@ const style = `<style>${rules(palette.light)}
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 /** The width of a line of text, estimated: the drawings use the system's sans-serif font */
-const widthOf = (s, size = 13, mono = false) => s.length * size * (mono ? 0.61 : 0.54)
+const widthOf = (s, size = 13, mono = false) => s.length * size * (mono ? 0.62 : 0.57)
 
 function svg(name, title, desc, width, height, body) {
   const file = join(out, `${name}.svg`)

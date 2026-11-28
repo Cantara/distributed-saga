@@ -90,15 +90,13 @@ const figureFolder = join(process.cwd(), '..', 'docs', 'images')
  * A figure of docs/images put into the page as it is, so the page's stylesheet colours it in the theme the reader
  * picked: its own `<style>` is left out (on GitHub, where it is shown as an image, it follows the system's theme), and
  * the classes it draws with are styled under `.diagram`. Its own title and description name it to a screen reader.
+ * The static site does not ship docs/images, so a figure that cannot be put into the page fails the build rather than
+ * leave a broken image.
  */
-async function inlineFigure(name: string): Promise<string | undefined> {
-  if (!/^[\w-]+\.svg$/.test(name)) return undefined
-  try {
-    const svg = await readFile(join(figureFolder, name), 'utf8')
-    return `<figure class="diagram">${svg.replace(/<style>[\s\S]*?<\/style>\s*/, '').trim()}</figure>`
-  } catch {
-    return undefined
-  }
+async function inlineFigure(name: string): Promise<string> {
+  if (!/^[\w-]+\.svg$/.test(name)) throw new Error(`docs/images: not a figure name: ${name}`)
+  const svg = await readFile(join(figureFolder, name), 'utf8')
+  return `<figure class="diagram">${svg.replace(/<style>[\s\S]*?<\/style>\s*/, '').trim()}</figure>`
 }
 
 /**
@@ -128,9 +126,12 @@ export async function prepareHtml(source: string): Promise<{ html: string; toc: 
   html = await highlightCode(html)
   html = await replaceAsync(
     html,
-    /<p>\s*<img src="[^"]*\/images\/([\w-]+\.svg)" alt="[^"]*"\s*\/?>\s*<\/p>/g,
-    async (whole = '', name = '') => (await inlineFigure(name)) ?? whole,
+    /<p>\s*<img\b[^>]*\bsrc="(?:[^"]*\/)?images\/([^"/]+)"[^>]*>\s*<\/p>/g,
+    (_, name = '') => inlineFigure(name),
   )
+  // Every image of docs/images is a figure, and each must have been put into the page
+  const left = /<img\b[^>]*\bsrc="(?:[^"]*\/)?images\/[^"]*"/.exec(html)
+  if (left) throw new Error(`docs/images: an image not put into the page: ${left[0]}`)
   return { html, toc, hasFigures }
 }
 

@@ -50,6 +50,10 @@ jobs:
           cache: pnpm
           cache-dependency-path: site/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # The figures of docs/images are drawn by site/diagrams/generate.mjs: an SVG that differs from what the script
+      # draws was edited by hand, or its source was changed without drawing it again
+      - name: The figures match their sources
+        run: node diagrams/generate.mjs > /dev/null && git diff --exit-code -- ../docs/images
       - id: pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
