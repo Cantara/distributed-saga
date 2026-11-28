@@ -1182,14 +1182,49 @@ html:has(.figure-dialog[open]) {
   stroke-dasharray: 2 3;
 }
 
-.fig-entry {
+.fig-bar-saga {
   fill: var(--color-sunken);
-  stroke: var(--color-border);
+  stroke: var(--color-text);
+}
+
+/* An entry of the saga log, in the colour of the state it gives its node; the newest, just written, stand out */
+.fig-entry {
+  stroke-width: 1;
+}
+
+.fig-entry-run {
+  fill: var(--color-sunken);
+  stroke: var(--color-text-muted);
+  stroke-dasharray: 4 2;
+}
+
+.fig-entry-done {
+  fill: color-mix(in srgb, var(--color-ok) 18%, var(--color-surface));
+  stroke: var(--color-ok);
+}
+
+.fig-entry-bad {
+  fill: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
+  stroke: var(--color-danger);
+}
+
+.fig-entry-gone {
+  fill: var(--color-surface);
+  stroke: var(--color-text-muted);
+  stroke-dasharray: 2 2;
+}
+
+.fig-entry-saga {
+  fill: var(--color-sunken);
+  stroke: var(--color-text);
 }
 
 .fig-entry-new {
-  fill: var(--color-accent-soft);
-  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+
+.fig .fig-mono-new {
+  font-weight: 700;
 }
 
 .fig-arrow {

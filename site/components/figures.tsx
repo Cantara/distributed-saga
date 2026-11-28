@@ -1,7 +1,12 @@
 // The figures of the landing page: SVG drawn in the theme's colours (globals.css, "Figures"). Each steps through four
 // stops, four seconds each: the groups s0 to s3 are shown one at a time. With reduced motion, the second stop shows.
+//
+// One colour per meaning, in the steps and in the saga log alike: a step's card has the colour of its last entry in
+// the log, as the saga-log protocol reads a node's state. Start (running) is dashed, End (done) green, Abort red,
+// Comp (compensated) dotted; S and E, the saga's own start and end, solid in the text colour. A crash writes nothing:
+// the step it cut off keeps the state of its Start.
 
-type State = 'idle' | 'running' | 'done' | 'waiting' | 'aborted' | 'undone' | 'crashed'
+type State = 'idle' | 'running' | 'done' | 'waiting' | 'aborted' | 'undone' | 'crashed' | 'saga'
 
 /** The word under a step, and its class, for each state */
 const stateText: Record<State, [string, string]> = {
@@ -10,16 +15,28 @@ const stateText: Record<State, [string, string]> = {
   done: ['done', 'fig-answer'],
   waiting: ['waits for 1 more', 'fig-small'],
   aborted: ['AbortSagaException', 'fig-missing'],
-  undone: ['compensated', 'fig-answer'],
+  undone: ['compensated', 'fig-small'],
   crashed: ['cut off', 'fig-missing'],
+  saga: ['', ''],
 }
 
 const cardClass: Partial<Record<State, string>> = {
   running: 'fig-bar fig-bar-run',
   done: 'fig-bar fig-bar-on',
   aborted: 'fig-bar fig-bar-bad',
-  crashed: 'fig-bar fig-bar-bad',
+  crashed: 'fig-bar fig-bar-run',
   undone: 'fig-bar fig-bar-gone',
+  saga: 'fig-bar fig-bar-saga',
+}
+
+/** The colour of a saga-log entry, by its type: the same as the state it gives its node */
+function entryClass(entry: string): string {
+  if (entry === 'Start S' || entry === 'End E') return 'fig-entry-saga'
+  const type = entry.split(' ')[0]
+  if (type === 'End') return 'fig-entry-done'
+  if (type === 'Abort') return 'fig-entry-bad'
+  if (type === 'Comp') return 'fig-entry-gone'
+  return 'fig-entry-run'
 }
 
 interface Step {
@@ -95,8 +112,8 @@ function Log({ y, stops, label = 'saga log' }: { y: number; stops: string[][]; l
               const fresh = i >= (stops[stop - 1]?.length ?? 0) && stop > 0
               return (
                 <g key={i}>
-                  <rect className={fresh ? 'fig-entry fig-entry-new' : 'fig-entry'} x={x} y={y + 9 + row * 24} width={w} height={20} rx={4} />
-                  <text className="fig-mono" x={x + 7} y={y + 23 + row * 24}>
+                  <rect className={`fig-entry ${entryClass(entry)}${fresh ? ' fig-entry-new' : ''}`} x={x} y={y + 9 + row * 24} width={w} height={20} rx={4} />
+                  <text className={fresh ? 'fig-mono fig-mono-new' : 'fig-mono'} x={x + 7} y={y + 23 + row * 24}>
                     {entry}
                   </text>
                 </g>
@@ -145,11 +162,11 @@ export function SagaGraphFigure(): React.ReactElement {
       {arrow('M252 60 C300 60 300 100 344 104 m-7 -5 l7 5 -7 5')}
       {arrow('M252 152 C300 152 300 112 344 110 m-7 -5 l7 5 -7 5')}
       {arrow('M482 106 H552 m-7 -5 l7 5 -7 5')}
-      <Terminal id="S" x={40} y={106} states={['done', 'done', 'done', 'done']} />
+      <Terminal id="S" x={40} y={106} states={['saga', 'saga', 'saga', 'saga']} />
       <StepCard step={reserve} states={['running', 'done', 'done', 'done']} />
       <StepCard step={charge} states={['running', 'running', 'done', 'done']} />
       <StepCard step={ship} states={['idle', 'waiting', 'running', 'done']} />
-      <Terminal id="E" x={576} y={106} states={['idle', 'idle', 'idle', 'done']} />
+      <Terminal id="E" x={576} y={106} states={['idle', 'idle', 'idle', 'saga']} />
       <Log
         y={224}
         stops={[
