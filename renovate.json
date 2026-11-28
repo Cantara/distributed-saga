@@ -17,6 +17,12 @@
         "postgres"
       ],
       "allowedVersions": "<19"
+    },
+    {
+      "description": "The documentation site (site/): every krantho package shares one version, so they update together, in one pull request",
+      "matchFileNames": ["site/**"],
+      "matchPackageNames": ["@krantho/**"],
+      "groupName": "krantho"
     }
   ]
 }
