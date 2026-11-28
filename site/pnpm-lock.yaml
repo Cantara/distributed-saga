@@ -198,7 +198,7 @@ importers:
         version: 2.0.0
       mermaid:
         specifier: ^12.3.0
-        version: 12.3.0
+        version: 12.4.0
       next:
         specifier: ^16.4.6
         version: 16.4.6(@types/node@26.6.11)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -1155,8 +1155,8 @@ packages:
   mdast-util-to-hast@13.2.2:
     resolution: {integrity: sha512-l2pnmOuqs+SGLVpTVXnRLQu5v1AzvDe181404fbXzzqObVxrAnnVxapAP27pUwzLBL/ABIkgUhGlPVU7QSvIFg==}
 
-  mermaid@12.3.0:
-    resolution: {integrity: sha512-4113TdXeLAsMruJ79OpFL5O8+LTFXhQqZ260rF3tgUmiNAtRm4Uume04I+65PRN6yZ69J4f8rVYWW8zRk65UYw==}
+  mermaid@12.4.0:
+    resolution: {integrity: sha512-j2gvsGUFeS/53WdYLl9H5G2YtMZX9G/PlCvV3E5Pf4j5XSnK19DwazU6wki7OTcKeYKed7+qujRDLhy8NV2zBg==}
     engines: {node: '>=22.12.0'}
 
   micromark-util-character@2.1.1:
@@ -2252,7 +2252,7 @@ snapshots:
       unist-util-visit: 5.2.0
       vfile: 6.0.3
 
-  mermaid@12.3.0:
+  mermaid@12.4.0:
     dependencies:
       '@braintree/sanitize-url': 7.1.2
       '@iconify/utils': 3.1.7
