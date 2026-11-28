@@ -58,7 +58,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
         <footer className="site-footer">
           <div className="site-footer-inner">
             <span>
-              Copyright Cantara © 2026 · <a href={`${repository}/blob/main/LICENSE`}>APL2</a>
+              Copyright <a href="https://cantara.no/">Cantara</a> © 2026 ·{' '}
+              <a href={`${repository}/blob/main/LICENSE`}>APL2</a>
             </span>
             <span>
               Built with <a href="https://krantho.com">krantho</a>
