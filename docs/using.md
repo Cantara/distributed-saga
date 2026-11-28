@@ -123,7 +123,11 @@ saga is done (see [sagalog-api](modules/sagalog-api.md#pools-and-ownership)).
 ```java
 String executionId = UUID.randomUUID().toString();
 SagaHandoffControl control = new SagaExecution(sagaLog, pool, saga, adapters)
-        .executeSaga(executionId, "{\"order\":1}", false, result -> sagaLog.truncate().join());
+        .executeSaga(executionId, "{\"order\":1}", false, result -> {
+            if (result.isSuccess() || result.getFailureCause() instanceof AbortSagaException) {
+                sagaLog.truncate().join();   // finished: End on E is in the log
+            }                                // any other failure: keep the entries for recovery
+        });
 
 control.getHandoffFuture().join();                                 // the saga is in the log
 SagaHandoffResult result = control.getCompletionFuture().join();   // the saga is finished
@@ -141,7 +145,9 @@ log after onComplete: 0
 - The handoff future completes when the `Start` entry is written. A server can reply "accepted" at that point.
 - `onComplete` is called once, when the saga is finished. The completion future completes only after it has
   returned, so a caller waiting on the future sees what `onComplete` did. The usual job of `onComplete` is to clean
-  up the log: `truncate()` removes all its entries, so the next saga starts on a clean log.
+  up the log once the saga is finished: `truncate()` removes all its entries, so the next saga starts on a clean log.
+  A saga is finished when it succeeded or was rolled back (`AbortSagaException`): both write `End` on `E`. After any
+  other failure, keep the entries: the saga has no `End` on `E`, and recovery needs them to finish it.
 - If `onComplete` throws after a successful saga, the completion future fails with `SagaOnCompleteException`.
 
 ## 6. Roll back with AbortSagaException

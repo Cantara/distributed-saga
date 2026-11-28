@@ -81,9 +81,13 @@ See [saga-execution](modules/saga-execution.md#adapters).
 
 ```java
 SagaExecution execution = new SagaExecution(sagaLog, threadPool, saga, adapterLoader);
-SagaHandoffControl control = execution.executeSaga(executionId, input, false, result -> sagaLog.truncate().join());
+SagaHandoffControl control = execution.executeSaga(executionId, input, false, result -> {
+    if (result.isSuccess() || result.getFailureCause() instanceof AbortSagaException) {
+        sagaLog.truncate().join();      // finished: End on E is in the log
+    }                                   // any other failure: keep the entries for recovery
+});
 control.getHandoffFuture().join();      // the saga is durable: Start on S is written
-control.getCompletionFuture().join();   // the saga is finished, and onComplete has returned
+control.getCompletionFuture().join();   // the execution has ended, and onComplete has returned
 ```
 
 | Type | Member | Meaning |

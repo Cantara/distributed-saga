@@ -62,8 +62,8 @@ SagaLogPool pool = fileInitializer.initialize(Map.of(
   its own `cluster.instance-id`; any of them can open another's log once that process has closed it.
 - Power loss during a write can corrupt the file on file systems that do not write a segment atomically; see
   [sagalog-file](modules/sagalog-file.md#behaviour-to-know).
-- Keep logs small: truncate in `onComplete`. A file shrinks only when it is emptied, and it is read into memory when
-  opened.
+- Keep logs small: truncate in `onComplete` once a saga is finished. A file shrinks only when it is emptied, and it
+  is read into memory when opened.
 
 ## Several instances on PostgreSQL
 

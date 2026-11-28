@@ -38,7 +38,9 @@ sequenceDiagram
 
 - `executeSaga` returns as soon as the first walk is submitted; everything after runs on the pool.
 - The handoff future completes once `Start` on `S` is in the log: from there the saga survives a crash.
-- The completion future completes only after `onComplete` has returned. The usual `onComplete` truncates the log.
+- The completion future completes only after `onComplete` has returned. The usual `onComplete` truncates the log
+  once the saga is finished (it succeeded, or was rolled back); after any other failure it keeps the entries for
+  recovery.
 - `preAction` and `postAction`, when given, run before and after each node's visit.
 
 ## A fork and a join
@@ -178,7 +180,7 @@ sequenceDiagram
     S->>DB: write a new owner_token in Locks
     S->>DB: create the log's table and index if missing, commit
     P-->>App: SagaLog, owned by owner
-    Note over App: run the saga on the log,<br/>and onComplete truncates it
+    Note over App: run the saga on the log, and onComplete<br/>truncates it once the saga is finished
     App->>P: releaseOwnership(owner, logId)
     Note over P: drop the ownership, release the permit,<br/>put the id at the back of the available queue
 ```

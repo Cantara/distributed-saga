@@ -86,9 +86,13 @@ SagaLogId logId = logPool.registerInstanceLocalIdFor("log-1");
 SagaLogOwner owner = new SagaLogOwner("main");
 SagaLog sagaLog = logPool.tryTakeOwnership(owner, logId);
 
-// 4. Run it, clean the log when it is done, and wait.
+// 4. Run it, clean the log when the saga is finished, and wait.
 SagaHandoffControl control = new SagaExecution(sagaLog, pool, saga, adapters)
-        .executeSaga(UUID.randomUUID().toString(), "{\"order\":1}", false, result -> sagaLog.truncate().join());
+        .executeSaga(UUID.randomUUID().toString(), "{\"order\":1}", false, result -> {
+            if (result.isSuccess() || result.getFailureCause() instanceof AbortSagaException) {
+                sagaLog.truncate().join();   // finished: End on E is in the log
+            }                                // any other failure: keep the entries for recovery
+        });
 SagaHandoffResult result = control.getCompletionFuture().join();
 System.out.println("success: " + result.isSuccess());   // success: true
 logPool.releaseOwnership(owner, logId);

@@ -133,8 +133,9 @@ A saga log has one writer at a time. `AbstractSagaLogPool` keeps that rule for t
   a take whose connect fails (the log goes back to the end of the queue).
 - **Fairness.** A released log goes to the back of the queue, so `tryAcquire` hands logs out round-robin, and a log
   that another process holds does not block the free ones behind it.
-- **Releasing** checks the owner: `releaseOwnership(owner, logId)` frees the log only for the owner that holds it, and
-  throws `SagaLogAlreadyAquiredByOtherOwnerException` for any other.
+- **Releasing** checks the owner: `releaseOwnership(owner, logId)` frees the log only for the owner that holds it. It
+  throws `SagaLogAlreadyAquiredByOtherOwnerException` if another owner holds the log, and `IllegalStateException` if
+  nobody does.
 - **Shutdown** marks the pool shut down, then closes and removes every log; later takes fail with
   `SagaPoolShutdownException`.
 

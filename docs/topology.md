@@ -73,9 +73,9 @@ flowchart TB
 | `SagaExecution` | One per saga and log | The application | Its executions |
 
 The usual pattern ([Using the library](using.md)): register a fixed set of instance-local logs at start-up; per
-saga, take a log with `tryAcquire`, run the saga on it, truncate the log in `onComplete`, and release the log. Each
-running saga then has a log to itself. A log can hold several executions, since every entry carries its execution id,
-but then `truncate()` in one execution's `onComplete` would remove the others' entries.
+saga, take a log with `tryAcquire`, run the saga on it, truncate the log in `onComplete` once the saga is finished,
+and release the log. Each running saga then has a log to itself. A log can hold several executions, since every entry
+carries its execution id, but then `truncate()` in one execution's `onComplete` would remove the others' entries.
 
 ## The shape of a saga
 
