@@ -27,13 +27,15 @@ execution; an application gets exactly-once *effects* by making its actions idem
 Each effect is bracketed by two durable saga-log entries (`SagaExecution.Execution.visitForward` and
 `visitBackward`). Each write is joined before the engine goes on:
 
-| Effect | Written before | Written after | Recovery finds only the entry before |
+| Effect | Written before | Written after | When only the entry before is in the log |
 |---|---|---|---|
-| Action | `Start` | `End`, with the output | runs the action again |
-| Compensating action | `CompStart` | `Comp` | runs the compensating action again |
+| Action | `Start` | `End`, with the output | Recovery runs the action again. |
+| Compensating action | `CompStart` | `Comp` | Recovery goes forward: it runs the step's action again. A later rollback that finds `CompStart` last runs the compensating action again. |
 
 Recovery looks at the last entry of each node. `End` passes on the logged output and does not run the action.
-`Start` runs the action again, without writing a second `Start`.
+`Start` runs the action again, without writing a second `Start`. Recovery always goes forward, also after a crash
+during a rollback ([Known limitations](limitations.md#recovery-after-a-crash-during-rollback)), so a compensating
+action that may have run is followed by its action running again: both must be idempotent.
 
 Several things leave an effect done without its entry after it:
 - the process crashes;

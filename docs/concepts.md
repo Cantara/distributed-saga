@@ -173,3 +173,22 @@ Not guaranteed:
   rollback and leaves the saga for forward recovery.
 
 See [Known limitations](limitations.md) for the details.
+
+### Each operation, at a glance
+
+| Operation | How often | What decides it |
+|---|---|---|
+| An action | At least once | Recovery skips a step only if its last entry is `End`, and passes on that `End`'s output. A step whose last entry is `Start` (it may or may not have run), `Abort`, `CompStart` or `Comp` runs again; a new `Start` is written unless the last entry already is one. |
+| A compensating action | At least once in a rollback that reaches `S`; it may run again | Only after `AbortSagaException`, for a step that started and has one. It gets the output of the step's last `End`, or `null` if the action started but did not end. A crash during a rollback is recovered forward: the step's action runs again, and a later rollback that finds `CompStart` last runs the compensating action again. |
+| A step without a compensating action | Never undone | A rollback logs nothing for it: its effect stays. |
+| `Start` on `S` | Once per execution | Written by the first `executeSaga`; recovery does not write it again. |
+| `End` on `E` | Once per execution | Written when the saga is finished, after success or after a rollback. An execution with it is finished: the application's recovery leaves it alone. |
+| A saga-log write | Joined before the saga goes on | A write that fails fails the saga; its entry may or may not be stored, and recovery reads whatever is. PostgreSQL retries a write whose reply was lost with the same entry id, and finding that entry stored counts as success. The file log is on disk when the write returns; the memory log keeps nothing across a crash. |
+| The handoff future | Completes once | Normally once `Start` on `S` is in the log (on recovery, when `S` is visited); exceptionally at once, with the execution's first failure. |
+| `onComplete` | Once per `executeSaga` call | So a recovered execution calls it again. It runs before the completion future completes. |
+| The completion future | Completes once | Normally after `End` on `E` and `onComplete`; exceptionally with the `AbortSagaException` after a rollback, with the first failure, or with `SagaOnCompleteException` when `onComplete` threw after success. |
+| `preAction`, `postAction` | Once per visit of a node | A recovered execution visits every node again: `postAction` is called for a step that recovery skips too, with its logged output. |
+
+Exactly-once *effects* come from the steps: [An idempotent step](using.md#an-idempotent-step) shows one, and
+[Design decisions](design-decisions.md#1-delivery-semantics-at-least-once) explains why the library runs steps at
+least once rather than at most once.
