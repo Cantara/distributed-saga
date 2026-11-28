@@ -1,0 +1,18 @@
+sequenceDiagram
+    autonumber
+    participant App as Application
+    participant P as SagaLogPool
+    participant S as LogSession
+    participant DB as PostgreSQL
+    App->>P: tryAcquire(owner, 10, SECONDS)
+    Note over P: take the next log id from the available queue,<br/>then that log's permit
+    P->>S: open the log (first time only)
+    S->>DB: find or assign lock_key in Locks, commit
+    S->>DB: pg_try_advisory_lock(lock_key)
+    DB-->>S: true
+    S->>DB: write a new owner_token in Locks
+    S->>DB: create the log's table and index if missing, commit
+    P-->>App: SagaLog, owned by owner
+    Note over App: run the saga on the log, and onComplete<br/>truncates it once the saga is finished
+    App->>P: releaseOwnership(owner, logId)
+    Note over P: drop the ownership, release the permit,<br/>put the id at the back of the available queue

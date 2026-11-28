@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1107 562" width="1107" height="562" role="img" aria-labelledby="success-title success-desc">
+<title id="success-title">A saga that succeeds</title>
+<desc id="success-desc">The caller starts the saga S, a, E; a walk on the pool writes Start on S, runs a between Start and End, writes End on E, calls onComplete and completes the completion future.</desc>
+<style>
+.bg{fill:#fbfbf9}
+.box{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.2}
+.lib{fill:#fbe9ea;stroke:#b3262c;stroke-width:1.5}
+.frame{fill:none;stroke:#8f9297;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#b3262c;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#8f9297;stroke-width:1.1}
+.tab{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.1}
+.divider{stroke:#8f9297;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#8f9297;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#8f9297;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#b3262c}
+.head{fill:#8f9297}
+.head-fail{fill:none;stroke:#b3262c;stroke-width:1.8}
+.note{fill:#fff7e0;stroke:#d9c17a;stroke-width:1}
+.num{fill:#1d1f22}
+.num-text{fill:#fbfbf9;font-size:10.5px;font-weight:700}
+text{fill:#1d1f22;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#55595f;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#b3262c}
+.ok{fill:#1f7a4d}
+@media (prefers-color-scheme: dark){
+.bg{fill:#121315}
+.box{fill:#202226;stroke:#7b7f86;stroke-width:1.2}
+.lib{fill:#3a1c1e;stroke:#f06a70;stroke-width:1.5}
+.frame{fill:none;stroke:#7b7f86;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#f06a70;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#7b7f86;stroke-width:1.1}
+.tab{fill:#202226;stroke:#7b7f86;stroke-width:1.1}
+.divider{stroke:#7b7f86;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#7b7f86;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#7b7f86;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#ff8a8f}
+.head{fill:#7b7f86}
+.head-fail{fill:none;stroke:#ff8a8f;stroke-width:1.8}
+.note{fill:#2b2617;stroke:#6b5c2c;stroke-width:1}
+.num{fill:#e9e9e6}
+.num-text{fill:#121315;font-size:10.5px;font-weight:700}
+text{fill:#e9e9e6;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#a8aaad;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#f06a70}
+.ok{fill:#5fc995}
+}
+</style>
+<rect class="bg" width="100%" height="100%" rx="8"/>
+<line class="lifeline" x1="78" y1="62" x2="78" y2="546"/>
+<rect class="box" x="20" y="20" width="116" height="42" rx="7"/>
+<text x="78" y="45.5" class="title" text-anchor="middle">Caller</text>
+<line class="lifeline" x1="398.8" y1="62" x2="398.8" y2="546"/>
+<rect class="box" x="337.4" y="20" width="122.8" height="42" rx="7"/>
+<text x="398.8" y="45.5" class="title" text-anchor="middle">SagaExecution</text>
+<line class="lifeline" x1="577.8" y1="62" x2="577.8" y2="546"/>
+<rect class="box" x="498.1" y="20" width="159.2" height="42" rx="7"/>
+<text x="577.8" y="45.5" class="title" text-anchor="middle">Walk (pool thread)</text>
+<line class="lifeline" x1="871.5" y1="62" x2="871.5" y2="546"/>
+<rect class="box" x="813.5" y="20" width="116" height="42" rx="7"/>
+<text x="871.5" y="45.5" class="title" text-anchor="middle">Adapter of a</text>
+<line class="lifeline" x1="1028.4" y1="62" x2="1028.4" y2="546"/>
+<rect class="box" x="970.4" y="20" width="116" height="42" rx="7"/>
+<text x="1028.4" y="45.5" class="title" text-anchor="middle">Log</text>
+<line class="edge" x1="88" y1="102" x2="397.8" y2="102"/>
+<path class="head" d="M397.8,102 L388.8,106.5 L388.8,97.5 Z"/>
+<text x="243.4" y="95" class="label" text-anchor="middle">executeSaga(id, input, false, onComplete)</text>
+<circle class="num" cx="78" cy="102" r="9"/>
+<text x="78" y="105.8" class="num-text" text-anchor="middle">1</text>
+<line class="edge" x1="408.8" y1="140" x2="576.8" y2="140"/>
+<path class="head" d="M576.8,140 L567.8,144.5 L567.8,135.5 Z"/>
+<text x="493.3" y="133" class="label" text-anchor="middle">submit the walk at S</text>
+<circle class="num" cx="398.8" cy="140" r="9"/>
+<text x="398.8" y="143.8" class="num-text" text-anchor="middle">2</text>
+<line class="edge dash" x1="388.8" y1="178" x2="79" y2="178"/>
+<path class="head" d="M79,178 L88,173.5 L88,182.5 Z"/>
+<text x="233.4" y="171" class="label" text-anchor="middle">SagaHandoffControl</text>
+<circle class="num" cx="398.8" cy="178" r="9"/>
+<text x="398.8" y="181.8" class="num-text" text-anchor="middle">3</text>
+<line class="edge" x1="587.8" y1="216" x2="1027.4" y2="216"/>
+<path class="head" d="M1027.4,216 L1018.4,220.5 L1018.4,211.5 Z"/>
+<text x="808.1" y="209" class="label" text-anchor="middle">write Start(S, saga name, input), and wait</text>
+<circle class="num" cx="577.8" cy="216" r="9"/>
+<text x="577.8" y="219.8" class="num-text" text-anchor="middle">4</text>
+<line class="edge dash" x1="567.8" y1="254" x2="79" y2="254"/>
+<path class="head" d="M79,254 L88,249.5 L88,258.5 Z"/>
+<text x="322.9" y="247" class="label" text-anchor="middle">handoff future completes</text>
+<circle class="num" cx="577.8" cy="254" r="9"/>
+<text x="577.8" y="257.8" class="num-text" text-anchor="middle">5</text>
+<line class="edge" x1="587.8" y1="292" x2="1027.4" y2="292"/>
+<path class="head" d="M1027.4,292 L1018.4,296.5 L1018.4,287.5 Z"/>
+<text x="808.1" y="285" class="label" text-anchor="middle">write Start(a), and wait</text>
+<circle class="num" cx="577.8" cy="292" r="9"/>
+<text x="577.8" y="295.8" class="num-text" text-anchor="middle">6</text>
+<line class="edge" x1="587.8" y1="330" x2="870.5" y2="330"/>
+<path class="head" d="M870.5,330 L861.5,334.5 L861.5,325.5 Z"/>
+<text x="729.6" y="323" class="label" text-anchor="middle">executeAction(a, input, outputs of S)</text>
+<circle class="num" cx="577.8" cy="330" r="9"/>
+<text x="577.8" y="333.8" class="num-text" text-anchor="middle">7</text>
+<line class="edge dash" x1="861.5" y1="368" x2="578.8" y2="368"/>
+<path class="head" d="M578.8,368 L587.8,363.5 L587.8,372.5 Z"/>
+<text x="719.6" y="361" class="label" text-anchor="middle">output</text>
+<circle class="num" cx="871.5" cy="368" r="9"/>
+<text x="871.5" y="371.8" class="num-text" text-anchor="middle">8</text>
+<line class="edge" x1="587.8" y1="406" x2="1027.4" y2="406"/>
+<path class="head" d="M1027.4,406 L1018.4,410.5 L1018.4,401.5 Z"/>
+<text x="808.1" y="399" class="label" text-anchor="middle">write End(a, output), and wait</text>
+<circle class="num" cx="577.8" cy="406" r="9"/>
+<text x="577.8" y="409.8" class="num-text" text-anchor="middle">9</text>
+<line class="edge" x1="587.8" y1="444" x2="1027.4" y2="444"/>
+<path class="head" d="M1027.4,444 L1018.4,448.5 L1018.4,439.5 Z"/>
+<text x="808.1" y="437" class="label" text-anchor="middle">write End(E), and wait</text>
+<circle class="num" cx="577.8" cy="444" r="9"/>
+<text x="577.8" y="447.8" class="num-text" text-anchor="middle">10</text>
+<line class="edge" x1="567.8" y1="482" x2="79" y2="482"/>
+<path class="head" d="M79,482 L88,477.5 L88,486.5 Z"/>
+<text x="322.9" y="475" class="label" text-anchor="middle">onComplete(success)</text>
+<circle class="num" cx="577.8" cy="482" r="9"/>
+<text x="577.8" y="485.8" class="num-text" text-anchor="middle">11</text>
+<line class="edge dash" x1="567.8" y1="520" x2="79" y2="520"/>
+<path class="head" d="M79,520 L88,515.5 L88,524.5 Z"/>
+<text x="322.9" y="513" class="label" text-anchor="middle">completion future completes</text>
+<circle class="num" cx="577.8" cy="520" r="9"/>
+<text x="577.8" y="523.8" class="num-text" text-anchor="middle">12</text>
+</svg>

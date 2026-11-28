@@ -32,11 +32,7 @@ A `Saga` (`no.cantara.saga.api.Saga`) is a named, directed acyclic graph (DAG) o
 Every other node is a step. A link from node A to node B means "B runs after A". A node with several incoming links
 runs only after all of them have completed, so independent branches run in parallel.
 
-```
-        ┌──► rdbms ───────┐
-S ──────┼──► graph ───────┼──► pubsub ──► E
-        └──► objectstore ─┘
-```
+![The saga of the sample](images/polyglot.svg)
 
 A saga is built with a fluent builder and validated when it is built: every link must point to a node that exists,
 the graph must have no cycle, and every node must be reachable from `S`. A `Saga` is a definition; the same instance

@@ -25,9 +25,25 @@ order: 3                 # the page's place in its group
 ---
 ```
 
-A ```mermaid block is drawn as a diagram, on the site as on GitHub, in the reader's theme; a click opens it large.
-Mermaid ends a statement at `;`, so a diagram's text must not contain one. Other code blocks are coloured as GitHub
-colours them, and get a copy button. A comment `<!-- label: ... -->` right before a block labels it.
+## Figures
+
+The figures of the documentation are SVG files in `docs/images/`, drawn by `site/diagrams/generate.mjs` in one style:
+the topology figures are laid out in that script, and the sequence diagrams of Sequence flows are drawn from their
+source in `site/diagrams/sequences/*.mmd`, in Mermaid's sequence syntax. A page shows one with an image link,
+`![The shape of a saga](images/saga-shape.svg)`. Change a figure in the script or its source, never in the SVG, and
+draw them again:
+
+```bash
+node site/diagrams/generate.mjs
+```
+
+Each SVG carries its own light and dark palette, so GitHub shows it in the reader's system theme. The site puts it
+into the page instead, without that palette, and colours it by the theme the reader picked (`.diagram` in
+`globals.css`); a click opens it large. A ```mermaid block in a page still works, drawn in the browser; Mermaid ends a
+statement at `;`, so its text must not contain one.
+
+Other code blocks are coloured as GitHub colours them, and get a copy button. A comment `<!-- label: ... -->` right
+before a block labels it.
 
 ## The landing page
 

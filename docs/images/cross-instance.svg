@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 706" width="768" height="706" role="img" aria-labelledby="cross-instance-title cross-instance-desc">
+<title id="cross-instance-title">Recovering another instance's logs</title>
+<desc id="cross-instance-desc">Instance 02 lists the cluster's logs and takes each log of instance 01: if 01 still holds it, SagaLogBusyException; else it recovers the log, removes it and releases it.</desc>
+<style>
+.bg{fill:#fbfbf9}
+.box{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.2}
+.lib{fill:#fbe9ea;stroke:#b3262c;stroke-width:1.5}
+.frame{fill:none;stroke:#8f9297;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#b3262c;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#8f9297;stroke-width:1.1}
+.tab{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.1}
+.divider{stroke:#8f9297;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#8f9297;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#8f9297;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#b3262c}
+.head{fill:#8f9297}
+.head-fail{fill:none;stroke:#b3262c;stroke-width:1.8}
+.note{fill:#fff7e0;stroke:#d9c17a;stroke-width:1}
+.num{fill:#1d1f22}
+.num-text{fill:#fbfbf9;font-size:10.5px;font-weight:700}
+text{fill:#1d1f22;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#55595f;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#b3262c}
+.ok{fill:#1f7a4d}
+@media (prefers-color-scheme: dark){
+.bg{fill:#121315}
+.box{fill:#202226;stroke:#7b7f86;stroke-width:1.2}
+.lib{fill:#3a1c1e;stroke:#f06a70;stroke-width:1.5}
+.frame{fill:none;stroke:#7b7f86;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#f06a70;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#7b7f86;stroke-width:1.1}
+.tab{fill:#202226;stroke:#7b7f86;stroke-width:1.1}
+.divider{stroke:#7b7f86;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#7b7f86;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#7b7f86;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#ff8a8f}
+.head{fill:#7b7f86}
+.head-fail{fill:none;stroke:#ff8a8f;stroke-width:1.8}
+.note{fill:#2b2617;stroke:#6b5c2c;stroke-width:1}
+.num{fill:#e9e9e6}
+.num-text{fill:#121315;font-size:10.5px;font-weight:700}
+text{fill:#e9e9e6;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#a8aaad;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#f06a70}
+.ok{fill:#5fc995}
+}
+</style>
+<rect class="bg" width="100%" height="100%" rx="8"/>
+<rect class="group" x="20" y="202" width="728" height="470" rx="6"/>
+<path class="tab" d="M20,208 a6,6 0 0 1 6,-6 h41 v14 l-8,8 h-39 Z"/>
+<text x="29" y="218" class="title">loop</text>
+<text x="77" y="218" class="label">[each log of instance 01]</text>
+<rect class="group" x="32" y="312" width="704" height="346" rx="6"/>
+<path class="tab" d="M32,318 a6,6 0 0 1 6,-6 h34.3 v14 l-8,8 h-32.2 Z"/>
+<text x="41" y="328" class="title">alt</text>
+<text x="82.3" y="328" class="label">[instance 01 still holds the log]</text>
+<line class="divider" x1="32" y1="420" x2="736" y2="420"/>
+<text x="42" y="437" class="label">[the lock is free]</text>
+<line class="lifeline" x1="170.8" y1="62" x2="170.8" y2="690"/>
+<rect class="box" x="112.8" y="20" width="116" height="42" rx="7"/>
+<text x="170.8" y="45.5" class="title" text-anchor="middle">Instance 02</text>
+<line class="lifeline" x1="397" y1="62" x2="397" y2="690"/>
+<rect class="box" x="324.7" y="20" width="144.6" height="42" rx="7"/>
+<text x="397" y="45.5" class="title" text-anchor="middle">SagaLogPool (02)</text>
+<line class="lifeline" x1="684" y1="62" x2="684" y2="690"/>
+<rect class="box" x="626" y="20" width="116" height="42" rx="7"/>
+<text x="684" y="45.5" class="title" text-anchor="middle">PostgreSQL</text>
+<line class="edge" x1="180.8" y1="102" x2="396" y2="102"/>
+<path class="head" d="M396,102 L387,106.5 L387,97.5 Z"/>
+<text x="288.9" y="95" class="label" text-anchor="middle">clusterWideLogIds()</text>
+<circle class="num" cx="170.8" cy="102" r="9"/>
+<text x="170.8" y="105.8" class="num-text" text-anchor="middle">1</text>
+<line class="edge" x1="407" y1="140" x2="683" y2="140"/>
+<path class="head" d="M683,140 L674,144.5 L674,135.5 Z"/>
+<text x="545.5" y="133" class="label" text-anchor="middle">list the namespace's tables</text>
+<circle class="num" cx="397" cy="140" r="9"/>
+<text x="397" y="143.8" class="num-text" text-anchor="middle">2</text>
+<line class="edge dash" x1="387" y1="178" x2="171.8" y2="178"/>
+<path class="head" d="M171.8,178 L180.8,173.5 L180.8,182.5 Z"/>
+<text x="278.9" y="171" class="label" text-anchor="middle">ids of 01 and 02</text>
+<circle class="num" cx="397" cy="178" r="9"/>
+<text x="397" y="181.8" class="num-text" text-anchor="middle">3</text>
+<line class="edge" x1="180.8" y1="250" x2="396" y2="250"/>
+<path class="head" d="M396,250 L387,254.5 L387,245.5 Z"/>
+<text x="288.9" y="243" class="label" text-anchor="middle">tryTakeOwnership(owner, id)</text>
+<circle class="num" cx="170.8" cy="250" r="9"/>
+<text x="170.8" y="253.8" class="num-text" text-anchor="middle">4</text>
+<line class="edge" x1="407" y1="288" x2="683" y2="288"/>
+<path class="head" d="M683,288 L674,292.5 L674,283.5 Z"/>
+<text x="545.5" y="281" class="label" text-anchor="middle">open: advisory lock, new owner_token</text>
+<circle class="num" cx="397" cy="288" r="9"/>
+<text x="397" y="291.8" class="num-text" text-anchor="middle">5</text>
+<line class="edge dash" x1="674" y1="360" x2="398" y2="360"/>
+<path class="head" d="M398,360 L407,355.5 L407,364.5 Z"/>
+<text x="535.5" y="353" class="label" text-anchor="middle">lock not granted</text>
+<circle class="num" cx="684" cy="360" r="9"/>
+<text x="684" y="363.8" class="num-text" text-anchor="middle">6</text>
+<line class="edge dash fail" x1="387" y1="398" x2="172.8" y2="398"/>
+<path class="head-fail" d="M174.8,393 l10,10 M184.8,393 l-10,10"/>
+<text x="278.9" y="391" class="label accent" text-anchor="middle">SagaLogBusyException</text>
+<circle class="num" cx="397" cy="398" r="9"/>
+<text x="397" y="401.8" class="num-text" text-anchor="middle">7</text>
+<line class="edge dash" x1="387" y1="464" x2="171.8" y2="464"/>
+<path class="head" d="M171.8,464 L180.8,459.5 L180.8,468.5 Z"/>
+<text x="278.9" y="457" class="label" text-anchor="middle">SagaLog</text>
+<circle class="num" cx="397" cy="464" r="9"/>
+<text x="397" y="467.8" class="num-text" text-anchor="middle">8</text>
+<rect class="note" x="44" y="484" width="253.5" height="44" rx="5"/>
+<text x="170.8" y="504" class="label" text-anchor="middle">recover each unfinished execution,</text>
+<text x="170.8" y="520" class="label" text-anchor="middle">as in &quot;Recovery after a crash&quot;</text>
+<line class="edge" x1="180.8" y1="558" x2="396" y2="558"/>
+<path class="head" d="M396,558 L387,562.5 L387,553.5 Z"/>
+<text x="288.9" y="551" class="label" text-anchor="middle">remove(id)</text>
+<circle class="num" cx="170.8" cy="558" r="9"/>
+<text x="170.8" y="561.8" class="num-text" text-anchor="middle">9</text>
+<rect class="note" x="263.5" y="578" width="267" height="28" rx="5"/>
+<text x="397" y="598" class="label" text-anchor="middle">closes the log: its lock is released</text>
+<line class="edge" x1="180.8" y1="636" x2="396" y2="636"/>
+<path class="head" d="M396,636 L387,640.5 L387,631.5 Z"/>
+<text x="288.9" y="629" class="label" text-anchor="middle">releaseOwnership(owner, id)</text>
+<circle class="num" cx="170.8" cy="636" r="9"/>
+<text x="170.8" y="639.8" class="num-text" text-anchor="middle">10</text>
+</svg>

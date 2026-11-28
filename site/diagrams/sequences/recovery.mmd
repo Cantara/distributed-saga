@@ -1,0 +1,18 @@
+sequenceDiagram
+    autonumber
+    participant R as Application (recovery)
+    participant X as SagaExecution
+    participant W as Walk
+    participant L as Log
+    R->>L: readIncompleteSagas()
+    L-->>R: Start(S), Start(a), End(a, out-a), Start(b)
+    Note over R: no End(E): unfinished. Find the saga by its name,<br/>turn Start(S)'s data back into the input
+    R->>X: executeSaga(id, input, true, onComplete)
+    X->>L: read the execution's entries, by node
+    X->>W: submit the walk at S
+    Note over W: S: Start(S) is not written again,<br/>the handoff future completes
+    Note over W: a: last entry End, so it is not run,<br/>and out-a is passed on
+    Note over W: b: last entry Start, so it runs again,<br/>without a second Start
+    W->>L: write End(b, out-b)
+    W->>L: write End(E)
+    W->>R: onComplete(success)

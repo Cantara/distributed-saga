@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 941 634" width="941" height="634" role="img" aria-labelledby="recovery-title recovery-desc">
+<title id="recovery-title">Recovery after a crash</title>
+<desc id="recovery-desc">The application reads the unfinished execution and runs it again with recovery true: a, which ended, is skipped and its output passed on; b runs again; End on E is written.</desc>
+<style>
+.bg{fill:#fbfbf9}
+.box{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.2}
+.lib{fill:#fbe9ea;stroke:#b3262c;stroke-width:1.5}
+.frame{fill:none;stroke:#8f9297;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#b3262c;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#8f9297;stroke-width:1.1}
+.tab{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.1}
+.divider{stroke:#8f9297;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#8f9297;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#8f9297;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#b3262c}
+.head{fill:#8f9297}
+.head-fail{fill:none;stroke:#b3262c;stroke-width:1.8}
+.note{fill:#fff7e0;stroke:#d9c17a;stroke-width:1}
+.num{fill:#1d1f22}
+.num-text{fill:#fbfbf9;font-size:10.5px;font-weight:700}
+text{fill:#1d1f22;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#55595f;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#b3262c}
+.ok{fill:#1f7a4d}
+@media (prefers-color-scheme: dark){
+.bg{fill:#121315}
+.box{fill:#202226;stroke:#7b7f86;stroke-width:1.2}
+.lib{fill:#3a1c1e;stroke:#f06a70;stroke-width:1.5}
+.frame{fill:none;stroke:#7b7f86;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#f06a70;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#7b7f86;stroke-width:1.1}
+.tab{fill:#202226;stroke:#7b7f86;stroke-width:1.1}
+.divider{stroke:#7b7f86;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#7b7f86;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#7b7f86;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#ff8a8f}
+.head{fill:#7b7f86}
+.head-fail{fill:none;stroke:#ff8a8f;stroke-width:1.8}
+.note{fill:#2b2617;stroke:#6b5c2c;stroke-width:1}
+.num{fill:#e9e9e6}
+.num-text{fill:#121315;font-size:10.5px;font-weight:700}
+text{fill:#e9e9e6;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#a8aaad;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#f06a70}
+.ok{fill:#5fc995}
+}
+</style>
+<rect class="bg" width="100%" height="100%" rx="8"/>
+<line class="lifeline" x1="197.4" y1="62" x2="197.4" y2="618"/>
+<rect class="box" x="103.2" y="20" width="188.4" height="42" rx="7"/>
+<text x="197.4" y="45.5" class="title" text-anchor="middle">Application (recovery)</text>
+<line class="lifeline" x1="511.4" y1="62" x2="511.4" y2="618"/>
+<rect class="box" x="450" y="20" width="122.8" height="42" rx="7"/>
+<text x="511.4" y="45.5" class="title" text-anchor="middle">SagaExecution</text>
+<line class="lifeline" x1="690.4" y1="62" x2="690.4" y2="618"/>
+<rect class="box" x="632.4" y="20" width="116" height="42" rx="7"/>
+<text x="690.4" y="45.5" class="title" text-anchor="middle">Walk</text>
+<line class="lifeline" x1="862.6" y1="62" x2="862.6" y2="618"/>
+<rect class="box" x="804.6" y="20" width="116" height="42" rx="7"/>
+<text x="862.6" y="45.5" class="title" text-anchor="middle">Log</text>
+<line class="edge" x1="207.4" y1="102" x2="861.6" y2="102"/>
+<path class="head" d="M861.6,102 L852.6,106.5 L852.6,97.5 Z"/>
+<text x="535" y="95" class="label" text-anchor="middle">readIncompleteSagas()</text>
+<circle class="num" cx="197.4" cy="102" r="9"/>
+<text x="197.4" y="105.8" class="num-text" text-anchor="middle">1</text>
+<line class="edge dash" x1="852.6" y1="140" x2="198.4" y2="140"/>
+<path class="head" d="M198.4,140 L207.4,135.5 L207.4,144.5 Z"/>
+<text x="525" y="133" class="label" text-anchor="middle">Start(S), Start(a), End(a, out-a), Start(b)</text>
+<circle class="num" cx="862.6" cy="140" r="9"/>
+<text x="862.6" y="143.8" class="num-text" text-anchor="middle">2</text>
+<rect class="note" x="20" y="160" width="354.8" height="44" rx="5"/>
+<text x="197.4" y="180" class="label" text-anchor="middle">no End(E): unfinished. Find the saga by its name,</text>
+<text x="197.4" y="196" class="label" text-anchor="middle">turn Start(S)'s data back into the input</text>
+<line class="edge" x1="207.4" y1="234" x2="510.4" y2="234"/>
+<path class="head" d="M510.4,234 L501.4,238.5 L501.4,229.5 Z"/>
+<text x="359.4" y="227" class="label" text-anchor="middle">executeSaga(id, input, true, onComplete)</text>
+<circle class="num" cx="197.4" cy="234" r="9"/>
+<text x="197.4" y="237.8" class="num-text" text-anchor="middle">3</text>
+<line class="edge" x1="521.4" y1="272" x2="861.6" y2="272"/>
+<path class="head" d="M861.6,272 L852.6,276.5 L852.6,267.5 Z"/>
+<text x="692" y="265" class="label" text-anchor="middle">read the execution's entries, by node</text>
+<circle class="num" cx="511.4" cy="272" r="9"/>
+<text x="511.4" y="275.8" class="num-text" text-anchor="middle">4</text>
+<line class="edge" x1="521.4" y1="310" x2="689.4" y2="310"/>
+<path class="head" d="M689.4,310 L680.4,314.5 L680.4,305.5 Z"/>
+<text x="605.9" y="303" class="label" text-anchor="middle">submit the walk at S</text>
+<circle class="num" cx="511.4" cy="310" r="9"/>
+<text x="511.4" y="313.8" class="num-text" text-anchor="middle">5</text>
+<rect class="note" x="567" y="330" width="246.8" height="44" rx="5"/>
+<text x="690.4" y="350" class="label" text-anchor="middle">S: Start(S) is not written again,</text>
+<text x="690.4" y="366" class="label" text-anchor="middle">the handoff future completes</text>
+<rect class="note" x="556.9" y="386" width="267" height="44" rx="5"/>
+<text x="690.4" y="406" class="label" text-anchor="middle">a: last entry End, so it is not run,</text>
+<text x="690.4" y="422" class="label" text-anchor="middle">and out-a is passed on</text>
+<rect class="note" x="550.1" y="442" width="280.5" height="44" rx="5"/>
+<text x="690.4" y="462" class="label" text-anchor="middle">b: last entry Start, so it runs again,</text>
+<text x="690.4" y="478" class="label" text-anchor="middle">without a second Start</text>
+<line class="edge" x1="700.4" y1="516" x2="861.6" y2="516"/>
+<path class="head" d="M861.6,516 L852.6,520.5 L852.6,511.5 Z"/>
+<text x="781.5" y="509" class="label" text-anchor="middle">write End(b, out-b)</text>
+<circle class="num" cx="690.4" cy="516" r="9"/>
+<text x="690.4" y="519.8" class="num-text" text-anchor="middle">6</text>
+<line class="edge" x1="700.4" y1="554" x2="861.6" y2="554"/>
+<path class="head" d="M861.6,554 L852.6,558.5 L852.6,549.5 Z"/>
+<text x="781.5" y="547" class="label" text-anchor="middle">write End(E)</text>
+<circle class="num" cx="690.4" cy="554" r="9"/>
+<text x="690.4" y="557.8" class="num-text" text-anchor="middle">7</text>
+<line class="edge" x1="680.4" y1="592" x2="198.4" y2="592"/>
+<path class="head" d="M198.4,592 L207.4,587.5 L207.4,596.5 Z"/>
+<text x="438.9" y="585" class="label" text-anchor="middle">onComplete(success)</text>
+<circle class="num" cx="690.4" cy="592" r="9"/>
+<text x="690.4" y="595.8" class="num-text" text-anchor="middle">8</text>
+</svg>

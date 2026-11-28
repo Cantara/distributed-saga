@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 216" width="800" height="216" role="img" aria-labelledby="saga-shape-title saga-shape-desc">
+<title id="saga-shape-title">The shape of a saga</title>
+<desc id="saga-shape-desc">S forks into reserve-stock and charge-card, which run at the same time. ship joins them: it starts when the last of the two is done. Then E.</desc>
+<style>
+.bg{fill:#fbfbf9}
+.box{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.2}
+.lib{fill:#fbe9ea;stroke:#b3262c;stroke-width:1.5}
+.frame{fill:none;stroke:#8f9297;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#b3262c;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#8f9297;stroke-width:1.1}
+.tab{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.1}
+.divider{stroke:#8f9297;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#8f9297;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#8f9297;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#b3262c}
+.head{fill:#8f9297}
+.head-fail{fill:none;stroke:#b3262c;stroke-width:1.8}
+.note{fill:#fff7e0;stroke:#d9c17a;stroke-width:1}
+.num{fill:#1d1f22}
+.num-text{fill:#fbfbf9;font-size:10.5px;font-weight:700}
+text{fill:#1d1f22;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#55595f;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#b3262c}
+.ok{fill:#1f7a4d}
+@media (prefers-color-scheme: dark){
+.bg{fill:#121315}
+.box{fill:#202226;stroke:#7b7f86;stroke-width:1.2}
+.lib{fill:#3a1c1e;stroke:#f06a70;stroke-width:1.5}
+.frame{fill:none;stroke:#7b7f86;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#f06a70;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#7b7f86;stroke-width:1.1}
+.tab{fill:#202226;stroke:#7b7f86;stroke-width:1.1}
+.divider{stroke:#7b7f86;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#7b7f86;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#7b7f86;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#ff8a8f}
+.head{fill:#7b7f86}
+.head-fail{fill:none;stroke:#ff8a8f;stroke-width:1.8}
+.note{fill:#2b2617;stroke:#6b5c2c;stroke-width:1}
+.num{fill:#e9e9e6}
+.num-text{fill:#121315;font-size:10.5px;font-weight:700}
+text{fill:#e9e9e6;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#a8aaad;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#f06a70}
+.ok{fill:#5fc995}
+}
+</style>
+<rect class="bg" width="100%" height="100%" rx="8"/>
+<circle class="lib" cx="56" cy="96" r="22"/>
+<text x="56" y="101" class="mono title" text-anchor="middle">S</text>
+<rect class="box" x="170" y="26" width="170" height="46" rx="7"/>
+<text x="255" y="53.5" class="mono title" text-anchor="middle">reserve-stock</text>
+<rect class="box" x="170" y="120" width="170" height="46" rx="7"/>
+<text x="255" y="147.5" class="mono title" text-anchor="middle">charge-card</text>
+<rect class="box" x="470" y="73" width="150" height="46" rx="7"/>
+<text x="545" y="100.5" class="mono title" text-anchor="middle">ship</text>
+<circle class="lib" cx="744" cy="96" r="22"/>
+<text x="744" y="101" class="mono title" text-anchor="middle">E</text>
+<path class="edge" d="M78,90 L120,49 L170,49"/>
+<path class="head" d="M170,49 L161,53.5 L161,44.5 Z"/>
+<path class="edge" d="M78,102 L120,143 L170,143"/>
+<path class="head" d="M170,143 L161,147.5 L161,138.5 Z"/>
+<path class="edge" d="M340,49 L400,49 L470,88"/>
+<path class="head" d="M470,88 L459.9,87.6 L464.3,79.7 Z"/>
+<path class="edge" d="M340,143 L400,143 L470,104"/>
+<path class="head" d="M470,104 L464.3,112.3 L459.9,104.4 Z"/>
+<path class="edge" d="M620,96 L722,96"/>
+<path class="head" d="M722,96 L713,100.5 L713,91.5 Z"/>
+<text x="150" y="196" class="small" text-anchor="middle">fork: a new walk for each extra branch</text>
+<text x="545" y="196" class="small" text-anchor="middle">join: starts when the last branch is done, on its walk</text>
+</svg>

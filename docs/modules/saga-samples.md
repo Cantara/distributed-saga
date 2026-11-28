@@ -15,11 +15,7 @@ order: 8
 A small HTTP server (Undertow) that runs one saga per `PUT` request: it "writes" the request body to three stores in
 parallel, then "publishes" an event.
 
-```
-        ┌──► rdbms ───────┐
-S ──────┼──► graph ───────┼──► pubsub ──► E
-        └──► objectstore ─┘
-```
+![The saga of the sample](../images/polyglot.svg)
 
 The four adapters (`adapter/WriteToRDBMS`, `WriteToGraph`, `WriteToObjectStore`, `PublishToPubSub`) extend
 `Adapter<JSONObject>` and return a JSON object that describes what a real store would do; there are no real stores,

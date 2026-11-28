@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import GithubSlugger from 'github-slugger'
 import { createHighlighter, type Highlighter } from 'shiki'
 
@@ -81,6 +83,24 @@ async function replaceAsync(
   return (await Promise.all(parts)).join('')
 }
 
+// The folder of docs/ that holds the figures of the pages, as SVG files (drawn by site/diagrams/generate.mjs)
+const figureFolder = join(process.cwd(), '..', 'docs', 'images')
+
+/**
+ * A figure of docs/images put into the page as it is, so the page's stylesheet colours it in the theme the reader
+ * picked: its own `<style>` is left out (on GitHub, where it is shown as an image, it follows the system's theme), and
+ * the classes it draws with are styled under `.diagram`. Its own title and description name it to a screen reader.
+ */
+async function inlineFigure(name: string): Promise<string | undefined> {
+  if (!/^[\w-]+\.svg$/.test(name)) return undefined
+  try {
+    const svg = await readFile(join(figureFolder, name), 'utf8')
+    return `<figure class="diagram">${svg.replace(/<style>[\s\S]*?<\/style>\s*/, '').trim()}</figure>`
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * The HTML of a page as krantho renders its markdown, made ready to show:
  *
@@ -88,6 +108,7 @@ async function replaceAsync(
  *   `using.md#7-recover-unfinished-sagas` leads to the same place on the site as on GitHub;
  * - a ```mermaid block becomes a `<pre class="mermaid">` with its source, which the page draws in the browser;
  * - every other code block is coloured by its language when the site is built (`highlight`);
+ * - a figure of docs/images is put into the page itself (`inlineFigure`);
  * - the `##` and `###` headings are listed as the page's contents.
  */
 export async function prepareHtml(source: string): Promise<{ html: string; toc: TocEntry[]; hasFigures: boolean }> {
@@ -105,6 +126,11 @@ export async function prepareHtml(source: string): Promise<{ html: string; toc: 
     return `<pre class="mermaid">${code}</pre>`
   })
   html = await highlightCode(html)
+  html = await replaceAsync(
+    html,
+    /<p>\s*<img src="[^"]*\/images\/([\w-]+\.svg)" alt="[^"]*"\s*\/?>\s*<\/p>/g,
+    async (whole = '', name = '') => (await inlineFigure(name)) ?? whole,
+  )
   return { html, toc, hasFigures }
 }
 

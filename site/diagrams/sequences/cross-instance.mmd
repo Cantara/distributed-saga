@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    participant I2 as Instance 02
+    participant P as SagaLogPool (02)
+    participant DB as PostgreSQL
+    I2->>P: clusterWideLogIds()
+    P->>DB: list the namespace's tables
+    P-->>I2: ids of 01 and 02
+    loop each log of instance 01
+        I2->>P: tryTakeOwnership(owner, id)
+        P->>DB: open: advisory lock, new owner_token
+        alt instance 01 still holds the log
+            DB-->>P: lock not granted
+            P--xI2: SagaLogBusyException
+        else the lock is free
+            P-->>I2: SagaLog
+            Note over I2: recover each unfinished execution,<br/>as in "Recovery after a crash"
+            I2->>P: remove(id)
+            Note over P: closes the log: its lock is released
+            I2->>P: releaseOwnership(owner, id)
+        end
+    end

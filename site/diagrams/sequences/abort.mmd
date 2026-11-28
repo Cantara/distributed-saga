@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant C as Caller
+    participant W as Walk
+    participant B as Adapter of b
+    participant A as Adapter of a
+    participant L as Log
+    W->>L: Start(S), Start(a), End(a, out-a)
+    W->>L: Start(b)
+    W->>B: executeAction
+    B--xW: AbortSagaException
+    Note over W: first abort: stop the forward traversal,<br/>register the rollback for when no walk is left
+    W->>L: write Abort(b)
+    Note over W: the walk ends: no walk left,<br/>so the rollback starts on this thread
+    W->>L: read the execution's entries, by node
+    Note over W: backward from E: b's last entry is Abort, skip it
+    W->>L: write CompStart(a)
+    W->>A: executeCompensatingAction(a, input, out-a)
+    W->>L: write Comp(a)
+    Note over W: reached S
+    W->>L: write End(E)
+    W->>C: onComplete(failure: AbortSagaException)
+    W-->>C: completion future fails with the AbortSagaException

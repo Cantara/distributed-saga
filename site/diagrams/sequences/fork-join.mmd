@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    participant W1 as Walk 1
+    participant P as Pool
+    participant W2 as Walk 2
+    participant L as Log
+    W1->>L: Start(S)
+    Note over W1: S done: signal a and b,<br/>both now have every signal
+    W1->>P: submit a new walk for a
+    P->>W2: run
+    par branch b on walk 1
+        W1->>L: Start(b), action, End(b)
+        Note over W1: signal j: 1 of 2 left
+        Note over W1: nothing started: walk 1 ends
+    and branch a on walk 2
+        W2->>L: Start(a), action, End(a)
+        Note over W2: signal j: 0 left, so j starts here
+    end
+    W2->>L: Start(j)
+    Note over W2: j gets the outputs of a and b
+    W2->>L: End(j)
+    W2->>L: End(E)

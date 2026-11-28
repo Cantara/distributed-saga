@@ -1,0 +1,21 @@
+sequenceDiagram
+    autonumber
+    participant W as Walk
+    participant S as LogSession
+    participant DB as PostgreSQL
+    W->>S: write(entry)
+    S->>DB: INSERT
+    DB--xS: connection lost (SQLState 08...)
+    Note over S: evict the connection
+    S->>DB: new connection
+    loop up to 10 s
+        S->>DB: pg_try_advisory_lock(lock_key)
+    end
+    S->>DB: read owner_token
+    alt the token is still its own
+        S->>DB: INSERT again, commit
+        S-->>W: the entry
+    else the token changed, or the row is gone
+        Note over S: another process held the log: give the lock up,<br/>refuse this and every later operation
+        S--xW: SagaLogBusyException
+    end

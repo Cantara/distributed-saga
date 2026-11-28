@@ -1,0 +1,12 @@
+sequenceDiagram
+    autonumber
+    participant C as Caller
+    participant W as Walk
+    participant L as Log
+    W->>L: Start(S), Start(a), End(a)
+    W->>L: Start(b)
+    Note over W: the action throws: the walk fails,<br/>the traversal stops, the failure is recorded
+    Note over W: the walk ends: no walk left
+    W->>C: onComplete(failure)
+    W-->>C: completion future fails with that exception
+    Note over L: no End(E): the execution is unfinished,<br/>and recovery will run b again

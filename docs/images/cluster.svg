@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 452" width="960" height="452" role="img" aria-labelledby="cluster-title cluster-desc">
+<title id="cluster-title">Several instances share their saga logs</title>
+<desc id="cluster-desc">Instances 01 and 02 each own and write their own logs in one PostgreSQL schema. Both take an advisory lock per log and keep an owner token in Locks. When instance 01 is gone, instance 02 can open its logs and recover them.</desc>
+<style>
+.bg{fill:#fbfbf9}
+.box{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.2}
+.lib{fill:#fbe9ea;stroke:#b3262c;stroke-width:1.5}
+.frame{fill:none;stroke:#8f9297;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#b3262c;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#8f9297;stroke-width:1.1}
+.tab{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.1}
+.divider{stroke:#8f9297;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#8f9297;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#8f9297;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#b3262c}
+.head{fill:#8f9297}
+.head-fail{fill:none;stroke:#b3262c;stroke-width:1.8}
+.note{fill:#fff7e0;stroke:#d9c17a;stroke-width:1}
+.num{fill:#1d1f22}
+.num-text{fill:#fbfbf9;font-size:10.5px;font-weight:700}
+text{fill:#1d1f22;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#55595f;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#b3262c}
+.ok{fill:#1f7a4d}
+@media (prefers-color-scheme: dark){
+.bg{fill:#121315}
+.box{fill:#202226;stroke:#7b7f86;stroke-width:1.2}
+.lib{fill:#3a1c1e;stroke:#f06a70;stroke-width:1.5}
+.frame{fill:none;stroke:#7b7f86;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#f06a70;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#7b7f86;stroke-width:1.1}
+.tab{fill:#202226;stroke:#7b7f86;stroke-width:1.1}
+.divider{stroke:#7b7f86;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#7b7f86;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#7b7f86;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#ff8a8f}
+.head{fill:#7b7f86}
+.head-fail{fill:none;stroke:#ff8a8f;stroke-width:1.8}
+.note{fill:#2b2617;stroke:#6b5c2c;stroke-width:1}
+.num{fill:#e9e9e6}
+.num-text{fill:#121315;font-size:10.5px;font-weight:700}
+text{fill:#e9e9e6;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#a8aaad;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#f06a70}
+.ok{fill:#5fc995}
+}
+</style>
+<rect class="bg" width="100%" height="100%" rx="8"/>
+<rect class="frame" x="20" y="20" width="300" height="116" rx="10"/>
+<text x="34" y="40" class="title">Instance 01</text>
+<rect class="box" x="60" y="62" width="220" height="50" rx="7"/>
+<text x="170" y="84" class="mono title" text-anchor="middle">SagaLogPool</text>
+<text x="170" y="99" class="small" text-anchor="middle">cluster.instance-id 01</text>
+<rect class="frame" x="640" y="20" width="300" height="116" rx="10"/>
+<text x="654" y="40" class="title">Instance 02</text>
+<rect class="box" x="680" y="62" width="220" height="50" rx="7"/>
+<text x="790" y="84" class="mono title" text-anchor="middle">SagaLogPool</text>
+<text x="790" y="99" class="small" text-anchor="middle">cluster.instance-id 02</text>
+<rect class="frame" x="20" y="236" width="920" height="196" rx="10"/>
+<text x="926" y="256" class="title" text-anchor="end">PostgreSQL: the schema cluster.owner</text>
+<path class="box" d="M50,297 a130,7 0 0 1 260,0 v86 a130,7 0 0 1 -260,0 Z"/>
+<path class="box" d="M50,297 a130,7 0 0 0 260,0"/>
+<text x="180" y="340" class="title" text-anchor="middle">SAGALOG_orders_01_log-0 …</text>
+<text x="180" y="355" class="small" text-anchor="middle">the logs of instance 01</text>
+<path class="box" d="M350,297 a130,7 0 0 1 260,0 v86 a130,7 0 0 1 -260,0 Z"/>
+<path class="box" d="M350,297 a130,7 0 0 0 260,0"/>
+<text x="480" y="332.5" class="title" text-anchor="middle">Locks</text>
+<text x="480" y="347.5" class="small" text-anchor="middle">lock key and owner token</text>
+<text x="480" y="362.5" class="small" text-anchor="middle">of every log</text>
+<path class="box" d="M650,297 a130,7 0 0 1 260,0 v86 a130,7 0 0 1 -260,0 Z"/>
+<path class="box" d="M650,297 a130,7 0 0 0 260,0"/>
+<text x="780" y="340" class="title" text-anchor="middle">SAGALOG_orders_02_log-0 …</text>
+<text x="780" y="355" class="small" text-anchor="middle">the logs of instance 02</text>
+<path class="edge" d="M130,112 L130,290"/>
+<path class="head" d="M130,290 L125.5,281 L134.5,281 Z"/>
+<text x="138" y="220" class="label">owns, writes</text>
+<path class="edge" d="M850,112 L850,290"/>
+<path class="head" d="M850,290 L845.5,281 L854.5,281 Z"/>
+<text x="842" y="220" class="label" text-anchor="end">owns, writes</text>
+<path class="edge dash" d="M700,112 L700,176 L250,176 L250,290"/>
+<path class="head" d="M250,290 L245.5,281 L254.5,281 Z"/>
+<text x="475" y="168" class="label" text-anchor="middle">recovers them when instance 01 is gone</text>
+<path class="edge" d="M230,112 L430,290"/>
+<path class="edge" d="M780,112 L530,290"/>
+<text x="480" y="418" class="small" text-anchor="middle">An advisory lock per log keeps one writer per log, cluster-wide.</text>
+</svg>

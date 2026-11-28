@@ -1,0 +1,19 @@
+sequenceDiagram
+    autonumber
+    participant C as Caller
+    participant X as SagaExecution
+    participant W as Walk (pool thread)
+    participant A as Adapter of a
+    participant L as Log
+    C->>X: executeSaga(id, input, false, onComplete)
+    X->>W: submit the walk at S
+    X-->>C: SagaHandoffControl
+    W->>L: write Start(S, saga name, input), and wait
+    W-->>C: handoff future completes
+    W->>L: write Start(a), and wait
+    W->>A: executeAction(a, input, outputs of S)
+    A-->>W: output
+    W->>L: write End(a, output), and wait
+    W->>L: write End(E), and wait
+    W->>C: onComplete(success)
+    W-->>C: completion future completes
