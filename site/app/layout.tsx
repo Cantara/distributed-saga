@@ -1,10 +1,12 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import Link from 'next/link'
-import { docLinks, site } from '../lib/krantho'
+import { GitHubLink, Logo, repository } from '../components/brand'
+import { MenuButton } from '../components/menu-button'
+import { ThemeSwitch, themeScript } from '../components/theme-switch'
+import { site } from '../lib/krantho'
 import './globals.css'
 
 const { name, description, baseUrl } = site.config.site
-const repository = 'https://github.com/Cantara/distributed-saga'
 
 export const metadata: Metadata = {
   // Absolute URLs (canonical, Open Graph) start at the site's address, path included
@@ -13,53 +15,55 @@ export const metadata: Metadata = {
   description,
 }
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}): Promise<React.ReactElement> {
-  const links = await docLinks()
-  const groups = [...new Set(links.map((link) => link.group))]
+// A phone lays the page out at its own width; its browser bars take the page's background, light or dark
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#fbfbf9' },
+    { media: '(prefers-color-scheme: dark)', color: '#121315' },
+  ],
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
-    <html lang="en">
+    // The theme script sets data-theme before React hydrates, so the attribute differs from the server's HTML
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
+        <a className="skip" href="#content">
+          Skip to the content
+        </a>
         <header className="site-header">
-          <Link href="/" className="site-name">
-            {/* public/cantara-mark.svg carries its own light and dark palette */}
-            <img src={`${site.basePath}/cantara-mark.svg`} alt="Cantara" className="site-logo" />
-            <span>{name}</span>
-          </Link>
-          <a href={repository} className="site-repo">
-            GitHub
-          </a>
+          <div className="site-header-inner">
+            <Link href="/" className="site-name" aria-label={`${name}, home`}>
+              <Logo />
+            </Link>
+            <nav className="header-nav" aria-label="Site">
+              <Link href="/docs/">Documentation</Link>
+              <Link href="/docs/glossary/">Glossary</Link>
+            </nav>
+            <div className="header-actions">
+              <ThemeSwitch />
+              <GitHubLink />
+              <MenuButton />
+            </div>
+          </div>
         </header>
-        <div className="site-body">
-          <nav className="sidebar" aria-label="Documentation">
-            {groups.map((group) => (
-              <section key={group}>
-                {group && <h2>{group}</h2>}
-                <ul>
-                  {links
-                    .filter((link) => link.group === group)
-                    .map((link) => (
-                      <li key={link.href}>
-                        <Link href={link.href}>{link.title}</Link>
-                      </li>
-                    ))}
-                </ul>
-              </section>
-            ))}
-          </nav>
-          <main>{children}</main>
+        <div id="content" tabIndex={-1}>
+          {children}
         </div>
         <footer className="site-footer">
-          <span>
-            Copyright Cantara © 2026 ·{' '}
-            <a href={`${repository}/blob/main/LICENSE`}>Apache License 2.0</a>
-          </span>
-          <span>
-            Built with <a href="https://krantho.com">krantho</a>
-          </span>
+          <div className="site-footer-inner">
+            <span>
+              Copyright Cantara © 2026 · <a href={`${repository}/blob/main/LICENSE`}>APL2</a>
+            </span>
+            <span>
+              Built with <a href="https://krantho.com">krantho</a>
+            </span>
+          </div>
         </footer>
       </body>
     </html>

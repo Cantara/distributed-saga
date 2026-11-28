@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
-import { DocPage, docMetadata } from '../../components/doc-page'
-import { site } from '../../lib/krantho'
+import { DocPage, docMetadata } from '../../../components/doc-page'
+import { site } from '../../../lib/krantho'
 
-// One page for each file in docs/; any other address is not found
+// One page for each file in docs/ but README.md, which is the documentation's home page (/docs/)
 export const dynamicParams = false
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {

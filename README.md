@@ -121,8 +121,9 @@ curl -X PUT http://127.0.0.1:8139/any/resource/path -d 'Hello Saga!' | jq .
 
 ## Documentation
 
-The developer documentation is in [docs/](docs/README.md), and published as a site at
-<https://cantara.github.io/distributed-saga/>:
+The developer documentation is in [docs/](docs/README.md). It is also published on the project's site,
+<https://cantara.github.io/distributed-saga/>: a landing page that shows what the library does, and the documentation
+at <https://cantara.github.io/distributed-saga/docs/>.
 
 - [Concepts](docs/concepts.md): sagas, adapters, the saga log, execution, rollback, recovery, guarantees
 - [Architecture](docs/architecture.md): modules, Java modules, threading, saga-log providers
@@ -135,6 +136,7 @@ The developer documentation is in [docs/](docs/README.md), and published as a si
 - [API reference](docs/api.md): every public type, by task
 - [Protocols](docs/protocols.md): the saga-log entries, the futures, the traversal, and log ownership
 - [Sequence flows](docs/sequence-flows.md): diagrams of success, abort, failure, recovery and log ownership
+- [Glossary](docs/glossary.md): the terms of the documentation, and the names the code gives them
 - Modules: [future-selector](docs/modules/future-selector.md), [saga-api](docs/modules/saga-api.md),
   [saga-execution](docs/modules/saga-execution.md), [saga-serialization](docs/modules/saga-serialization.md),
   [sagalog-api](docs/modules/sagalog-api.md), [sagalog-file](docs/modules/sagalog-file.md),

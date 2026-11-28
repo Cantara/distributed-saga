@@ -14,13 +14,17 @@
     "@krantho/seo": "^1.1.4",
     "@krantho/static": "^1.1.4",
     "@krantho/ui-react": "^1.1.4",
+    "d3-transition": "^3.0.2",
+    "github-slugger": "^2.0.0",
     "mermaid": "^12.3.0",
     "next": "^16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "shiki": "^4.6.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/d3-transition": "^3.0.9",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "typescript": "^7.0.2"

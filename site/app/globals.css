@@ -1,216 +1,1179 @@
+/* Tokens: type, space, shape and motion once; colour for light, then for dark. Components read tokens only.
+
+   Viewports the layout is made for (CSS pixels):
+   - phone, 360 to 430: one column; the header's links on a row of their own; the sidebar behind the menu button;
+   - tablet portrait, 744 to 834 (iPad): one column, the sidebar behind the menu button;
+   - tablet landscape and small laptop, 1024 to 1280: the sidebar and the page; the page's contents are hidden;
+   - laptop, 1280 to 1512: the sidebar, the page and its contents, the page as wide as it can be;
+   - desktop, 1920 and wider; 4K and 5K screens at a scale of 1 to 1.5 (2560 to 3840): the type grows with the
+     window (`html` font size), so the page keeps its proportions instead of becoming a strip in the middle. */
 :root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #1c1f24;
-  --muted: #5b6370;
-  --line: #e3e6ea;
-  --accent: #2f6fdb;
-  --code-bg: #f4f5f7;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  line-height: 1.6;
+  --font-text: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-2xl: clamp(1.5rem, 1.25rem + 1vw, 1.9rem);
+  --text-4xl: clamp(2rem, 1.4rem + 2.6vw, 3.25rem);
+  --leading-tight: 1.15;
+  --leading-body: 1.65;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 2rem;
+  --space-8: 4rem;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --width-content: 96rem;
+  --width-prose: 46rem;
+  --width-sidebar: 15rem;
+  --width-toc: 13rem;
+  --gutter: clamp(1rem, 0.5rem + 2vw, 2rem);
+  --header-height: 4rem;
+  --duration-fast: 150ms;
+
+  color-scheme: light;
+  --color-bg: #fbfbf9;
+  --color-surface: #ffffff;
+  --color-sunken: #f2f2ef;
+  --color-text: #1d1f22;
+  --color-text-muted: #55595f;
+  --color-border: #e0e0db;
+  --color-accent: #b3262c;
+  --color-accent-contrast: #ffffff;
+  --color-accent-soft: #fbe9ea;
+  --color-focus: #b3262c;
+  --color-danger: #b3262c;
+  --color-ok: #1f7a4d;
+  --cantara-red: #c12a30;
+  --cantara-maroon: #6a1a1d;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111418;
-    --fg: #e6e8eb;
-    --muted: #9aa3ae;
-    --line: #2a3038;
-    --accent: #7aa7f5;
-    --code-bg: #1b2027;
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --color-bg: #121315;
+    --color-surface: #191a1d;
+    --color-sunken: #202226;
+    --color-text: #e9e9e6;
+    --color-text-muted: #a8aaad;
+    --color-border: #303237;
+    --color-accent: #f06a70;
+    --color-accent-contrast: #121315;
+    --color-accent-soft: #3a1c1e;
+    --color-focus: #f06a70;
+    --color-danger: #ff8a8f;
+    --color-ok: #5fc995;
+    --cantara-red: #f06a70;
+    --cantara-maroon: #e2a3a7;
   }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-bg: #121315;
+  --color-surface: #191a1d;
+  --color-sunken: #202226;
+  --color-text: #e9e9e6;
+  --color-text-muted: #a8aaad;
+  --color-border: #303237;
+  --color-accent: #f06a70;
+  --color-accent-contrast: #121315;
+  --color-accent-soft: #3a1c1e;
+  --color-focus: #f06a70;
+  --color-danger: #ff8a8f;
+  --color-ok: #5fc995;
+  --cantara-red: #f06a70;
+  --cantara-maroon: #e2a3a7;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: calc(var(--header-height) + var(--space-4));
+}
+
+/* A large screen: everything grows with the type, so a 4K or 5K window shows the same page, larger */
+@media (min-width: 120rem) {
+  html {
+    font-size: 112.5%;
+  }
+}
+
+@media (min-width: 150rem) {
+  html {
+    font-size: 125%;
+  }
+}
+
+@media (min-width: 200rem) {
+  html {
+    font-size: 162.5%;
+  }
+}
+
+@media (min-width: 280rem) {
+  html {
+    font-size: 212.5%;
+  }
+}
+
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--text-base) / var(--leading-body) var(--font-text);
 }
 
 a {
-  color: var(--accent);
+  color: var(--color-accent);
+  text-underline-offset: 0.15em;
 }
 
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+#content:focus {
+  outline: none;
+}
+
+.skip {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  left: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  position: absolute;
+  top: -10rem;
+  z-index: 10;
+}
+
+.skip:focus {
+  top: var(--space-2);
+}
+
+/* The header: the logo, the site's destinations, the theme and GitHub */
 .site-header {
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.site-header-inner {
   align-items: center;
-  border-bottom: 1px solid var(--line);
   display: flex;
-  justify-content: space-between;
-  padding: 1rem 1.5rem;
-}
-
-.site-repo {
-  color: var(--muted);
-  text-decoration: none;
-}
-
-.site-repo:hover {
-  color: var(--accent);
+  gap: var(--space-6);
+  height: var(--header-height);
+  margin: 0 auto;
+  max-width: var(--width-content);
+  padding: 0 var(--gutter);
 }
 
 .site-name {
-  align-items: center;
-  color: var(--fg);
+  color: var(--color-text);
   display: flex;
-  font-weight: 700;
-  gap: 0.75rem;
   text-decoration: none;
 }
 
-/* The Cantara mark: arcs and wordmark. Its colours are in the SVG, one palette per colour scheme */
-.site-logo {
-  border-right: 1px solid var(--line);
-  display: block;
-  height: 2.25rem;
-  padding-right: 0.75rem;
-  width: auto;
+.logo {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
 }
 
+/* Cantara's mark, its two inks from the theme */
+.logo-mark {
+  border-right: 1px solid var(--color-border);
+  display: block;
+  height: 2rem;
+  padding-right: var(--space-3);
+  width: auto;
+  box-sizing: content-box;
+}
+
+.mark-red {
+  fill: var(--cantara-red);
+}
+
+.mark-maroon {
+  fill: var(--cantara-maroon);
+}
+
+.logo-name {
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.header-nav {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.header-nav a {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.header-nav a:hover {
+  color: var(--color-text);
+}
+
+.header-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.github,
+.icon-button,
+.menu-button {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  height: 2.5rem;
+  justify-content: center;
+  padding: 0;
+  width: 2.5rem;
+}
+
+.github:hover,
+.icon-button:hover,
+.menu-button:hover {
+  background: var(--color-sunken);
+  color: var(--color-text);
+}
+
+/* Shown on a narrow screen in the documentation only */
+.menu-button {
+  display: none;
+}
+
+/* The landing page: every section is a row of one of three kinds. No cards and no frames: space parts the rows, colour
+   is kept for what acts or answers. A row is one column, 46rem at most, until the window has room for two.
+   - 40/60 (`row-wide`): text beside a figure or code, from 72rem (a laptop); every other one has its figure first
+     (`row-flipped`).
+   - 50/50 (`row-halves`): two sections of a pair, from 56rem.
+   - thirds (`row-thirds`): a heading and text over the width, then three columns, from 56rem (a tablet). */
+.landing {
+  margin: 0 auto;
+  max-width: var(--width-content);
+  padding: 0 var(--gutter) var(--space-8);
+}
+
+.row {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 46rem);
+  justify-content: center;
+  padding: clamp(2.5rem, 1.5rem + 3vw, 4.5rem) 0;
+}
+
+.row + .row {
+  border-top: 1px solid var(--color-border);
+}
+
+@media (min-width: 56rem) {
+  .row-halves {
+    column-gap: 3rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .row-thirds {
+    column-gap: 3rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .row-thirds > .row-part {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 72rem) {
+  .row-wide {
+    align-items: center;
+    column-gap: clamp(2.5rem, 4vw, 5rem);
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+
+  .row-flipped {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  .row-flipped > .row-side {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}
+
+.row h3 {
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-2);
+}
+
+.row h2 {
+  font-size: var(--text-2xl);
+  text-wrap: balance;
+  letter-spacing: -0.01em;
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-4);
+}
+
+.row .prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* A column of a row of thirds: a line in the accent over it */
+.row-column {
+  border-top: 2px solid var(--color-accent);
+  padding-top: var(--space-4);
+}
+
+/* Running text keeps a line of about 65 to 75 characters; code and figures take the whole column */
+.row-part > .prose {
+  max-width: 38rem;
+}
+
+.row-part .actions {
+  margin-top: var(--space-6);
+}
+
+/* Code on the landing page wraps where its column is too narrow, instead of scrolling */
+.landing .code-block pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.row-side .code-block {
+  margin: 0 0 var(--space-4);
+}
+
+.row-side .code-block:last-child {
+  margin-bottom: 0;
+}
+
+.hero {
+  padding-top: clamp(2.5rem, 1.5rem + 4vw, 5.5rem);
+}
+
+/* The release the page is about, a line above the headline */
+.eyebrow {
+  background: var(--color-accent-soft);
+  border-radius: 999px;
+  color: var(--color-accent);
+  display: inline-block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0 0 var(--space-4);
+  padding: 0.2rem 0.75rem;
+}
+
+.hero h1 {
+  font-size: var(--text-4xl);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  text-wrap: balance;
+  margin: 0 0 var(--space-4);
+}
+
+.subline {
+  color: var(--color-text-muted);
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-6);
+  max-width: 44rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.button {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-weight: 600;
+  padding: var(--space-3) var(--space-6);
+  text-decoration: none;
+  transition: filter var(--duration-fast);
+}
+
+.button:hover {
+  background: var(--color-sunken);
+}
+
+.button.primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.button.primary:hover {
+  filter: brightness(1.08);
+}
+
+/* The documentation: sidebar, page, and the page's contents. The page takes every pixel the two side columns leave,
+   and its text stays readable by its own measure (`.doc`). */
 .site-body {
   display: grid;
-  grid-template-columns: 16rem minmax(0, 1fr);
-  max-width: 72rem;
+  grid-template-columns: var(--width-sidebar) minmax(0, 1fr);
   margin: 0 auto;
+  max-width: var(--width-content);
 }
 
 .sidebar {
-  border-right: 1px solid var(--line);
-  padding: 1.5rem;
+  align-self: start;
+  border-right: 1px solid var(--color-border);
+  max-height: calc(100vh - var(--header-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-6) var(--space-4) var(--space-6) var(--gutter);
+  position: sticky;
+  top: var(--header-height);
 }
 
-.sidebar h2 {
-  color: var(--muted);
+.sidebar h2,
+.toc h2 {
+  color: var(--color-text-muted);
   font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  margin: 1.25rem 0 0.5rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  margin: var(--space-6) 0 var(--space-2);
   text-transform: uppercase;
 }
 
-.sidebar ul {
+.sidebar section:first-child h2 {
+  margin-top: 0;
+}
+
+.sidebar ul,
+.toc ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
 .sidebar li {
-  margin: 0.25rem 0;
+  margin: 0.1rem 0;
 }
 
 .sidebar a {
-  color: var(--fg);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  display: block;
+  font-size: var(--text-sm);
+  margin-left: calc(-1 * var(--space-2));
+  padding: 0.2rem var(--space-2);
   text-decoration: none;
 }
 
-.sidebar a:hover {
-  color: var(--accent);
+.sidebar a[aria-current='page'] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
 }
 
-main {
-  padding: 1.5rem 2rem 4rem;
+.sidebar a:hover,
+.toc a:hover {
+  color: var(--color-accent);
 }
 
+.site-body main {
+  min-width: 0;
+  padding: var(--space-6) clamp(1rem, 3vw, 3rem) var(--space-8);
+}
+
+.doc-layout {
+  display: grid;
+  gap: clamp(1.5rem, 3vw, 3rem);
+  grid-template-columns: minmax(0, 1fr) var(--width-toc);
+}
+
+/* A page's text: wide enough for its tables and figures, at most 60rem so a line stays readable */
 .doc {
-  /* The docs hold wide tables and 118-column code: a wider column than prose alone needs */
-  max-width: 56rem;
+  max-width: 60rem;
+  min-width: 0;
 }
 
-.doc h1 {
-  font-size: 2.25rem;
-  line-height: 1.2;
-  margin: 0.5rem 0;
+.toc {
+  align-self: start;
+  border-left: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+  max-height: calc(100vh - var(--header-height) - var(--space-6));
+  overflow-y: auto;
+  padding-left: var(--space-4);
+  position: sticky;
+  top: calc(var(--header-height) + var(--space-6));
 }
 
-.lead {
-  color: var(--muted);
-  font-size: 1.15rem;
+.toc h2 {
+  margin-top: 0;
 }
 
-.prose code {
-  background: var(--code-bg);
+.toc li {
+  margin: 0.3rem 0;
+}
+
+.toc .toc-3 {
+  padding-left: var(--space-3);
+}
+
+.toc a {
+  color: var(--color-text-muted);
+  display: block;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+/* The heading in view (SectionHash) */
+.toc a[aria-current='location'] {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* Text from markdown */
+.prose {
+  overflow-wrap: break-word;
+}
+
+.prose h1 {
+  font-size: var(--text-4xl);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  margin: 0 0 var(--space-6);
+}
+
+.prose h2 {
+  border-top: 1px solid var(--color-border);
+  font-size: 1.35rem;
+  line-height: 1.25;
+  margin: var(--space-8) 0 var(--space-3);
+  padding-top: var(--space-4);
+}
+
+/* The first section of a page follows its title closely */
+.prose h1 + h2 {
+  border-top: 0;
+  margin-top: var(--space-4);
+  padding-top: 0;
+}
+
+.prose h3 {
+  font-size: 1.1rem;
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+.prose h4 {
+  font-size: var(--text-base);
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  position: relative;
+}
+
+.prose .anchor {
+  color: var(--color-text-muted);
+  left: -1.1em;
+  opacity: 0;
+  position: absolute;
+  text-decoration: none;
+  transition: opacity var(--duration-fast);
+}
+
+.prose :is(h1, h2, h3, h4):hover .anchor {
+  opacity: 1;
+}
+
+.prose :not(pre) > code {
+  background: var(--color-sunken);
   border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
   padding: 0.1em 0.3em;
 }
 
 .prose pre {
-  background: var(--code-bg);
-  border-radius: 6px;
+  background: var(--color-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.55;
   overflow-x: auto;
-  padding: 1rem;
+  padding: var(--space-4);
 }
 
 .prose pre code {
-  background: none;
-  padding: 0;
+  font-family: inherit;
 }
 
-.prose img {
+/* A code block: a bar with its language and the copy button, then the code, coloured as GitHub colours it */
+.code-block {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin: var(--space-4) 0;
+  overflow: hidden;
+}
+
+.code-head {
+  align-items: center;
+  background: var(--color-sunken);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  min-height: 1.9rem;
+  padding: 0 var(--space-2) 0 var(--space-3);
+}
+
+.code-lang {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+}
+
+.code-copy {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 0.15rem 0.5rem;
+}
+
+.code-copy:hover {
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.prose .code-block pre {
+  background: var(--color-surface);
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+}
+
+.prose .code-wrap pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .shiki,
+  :root:not([data-theme='light']) .shiki span {
+    color: var(--shiki-dark);
+  }
+}
+
+:root[data-theme='dark'] .shiki,
+:root[data-theme='dark'] .shiki span {
+  color: var(--shiki-dark);
+}
+
+/* A figure: drawn by Mermaid in the browser; its source is shown until then */
+.prose pre.mermaid {
+  background: var(--color-surface);
+  display: flex;
+  justify-content: center;
+}
+
+.prose pre.mermaid[data-processed] {
+  font-family: var(--font-text);
+}
+
+.prose pre.mermaid svg {
+  height: auto;
   max-width: 100%;
 }
 
-/* A wide table scrolls on its own, not the page */
+/* A figure opens large (components/figure-zoom.tsx): the corner says so, and the pointer shows a magnifier */
+.prose pre.mermaid[role='button'] {
+  cursor: zoom-in;
+  position: relative;
+}
+
+.prose pre.mermaid[role='button']::after {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  content: '⤢ Enlarge';
+  font: var(--text-xs) / 1.4 var(--font-text);
+  opacity: 0.75;
+  padding: 0.1rem 0.4rem;
+  position: absolute;
+  right: var(--space-2);
+  top: var(--space-2);
+  transition: opacity var(--duration-fast);
+}
+
+.prose pre.mermaid[role='button']:is(:hover, :focus-visible)::after {
+  color: var(--color-text);
+  opacity: 1;
+}
+
+.prose pre.mermaid[role='button']:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* The dialog a figure opens in: as wide as the window allows, scrolled when it is taller than the window */
+.figure-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  max-height: 94vh;
+  max-width: 96vw;
+  padding: 0;
+  width: 96vw;
+}
+
+.figure-dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.figure-dialog-head {
+  align-items: center;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.figure-dialog-head h2 {
+  font-size: var(--text-base);
+  margin: 0;
+}
+
+.figure-dialog-close {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 0.2rem 0.7rem;
+}
+
+.figure-dialog-body {
+  padding: var(--space-4);
+}
+
+.figure-dialog-body svg {
+  display: block;
+  height: auto;
+  margin: 0 auto;
+  max-height: none;
+}
+
+html:has(.figure-dialog[open]) {
+  overflow: hidden;
+}
+
+.prose blockquote {
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-muted);
+  margin: var(--space-4) 0;
+  padding: 0 var(--space-4);
+}
+
+/* A table fits the text's width: its code wraps where it must. One that cannot fit scrolls, and a shadow at an edge
+   shows that more is there. */
 .prose table {
+  background:
+    linear-gradient(to right, var(--color-bg) 30%, transparent) left / 2rem 100% no-repeat local,
+    linear-gradient(to left, var(--color-bg) 30%, transparent) right / 2rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.18), transparent) left / 0.75rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.18), transparent) right / 0.75rem 100% no-repeat scroll;
   border-collapse: collapse;
   display: block;
+  font-size: var(--text-sm);
+  margin: var(--space-6) 0;
+  max-width: 100%;
   overflow-x: auto;
 }
 
 .prose th,
 .prose td {
-  border: 1px solid var(--line);
-  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--color-border);
+  padding: 0.4rem 0.7rem;
   text-align: left;
   vertical-align: top;
 }
 
 .prose th {
-  background: var(--code-bg);
+  background: var(--color-sunken);
 }
 
-/* A diagram drawn from a ```mermaid block; a wide one scrolls on its own */
-.prose .mermaid {
-  margin: 1.5rem 0;
-  overflow-x: auto;
-  text-align: center;
+.prose td code,
+.prose th code {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
-.site-footer {
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 0.875rem;
-  gap: 0.5rem 1.5rem;
-  justify-content: space-between;
-  padding: 1.25rem 1.5rem;
+.prose td {
+  min-width: 6rem;
+}
+
+.prose img {
+  height: auto;
+  max-width: 100%;
 }
 
 .pager {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
   display: flex;
+  gap: var(--space-4);
   justify-content: space-between;
-  margin-top: 3rem;
-  padding-top: 1.5rem;
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
 }
 
 .pager a[rel='next'] {
   margin-left: auto;
+  text-align: right;
 }
 
-@media (max-width: 48rem) {
+.not-found {
+  margin: 0 auto;
+  max-width: var(--width-prose);
+  padding: var(--space-8) var(--gutter);
+}
+
+.lead {
+  color: var(--color-text-muted);
+  font-size: var(--text-lg);
+}
+
+.site-footer {
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.site-footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  justify-content: space-between;
+  margin: 0 auto;
+  max-width: var(--width-content);
+  padding: var(--space-6) var(--gutter);
+}
+
+.site-footer a {
+  color: var(--color-text);
+}
+
+/* A 13-inch laptop (1280) or a tablet held sideways: the page takes the room the page's contents would, which shows
+   from 84rem (1344) */
+@media (max-width: 84rem) {
+  .doc-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .toc {
+    display: none;
+  }
+}
+
+/* A tablet held upright, or narrower: one column, the sidebar behind the menu button */
+@media (max-width: 56rem) {
   .site-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body:has(.sidebar) .menu-button {
+    display: flex;
   }
 
   .sidebar {
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--color-border);
     border-right: none;
+    display: none;
+    max-height: none;
+    padding: var(--space-4) var(--gutter);
+    position: static;
   }
 
-  main {
-    padding: 1.5rem 1rem 3rem;
+  .menu-open .sidebar {
+    display: block;
+  }
+
+  .sidebar a {
+    padding: 0.5rem var(--space-2);
+  }
+
+  .site-body main {
+    padding: var(--space-6) var(--gutter) var(--space-8);
+  }
+
+  .prose .anchor {
+    display: none;
+  }
+}
+
+/* A phone: the header's links on a row of their own under the logo, and the header scrolls away with the page */
+@media (max-width: 40rem) {
+  :root {
+    --header-height: 0rem;
+  }
+
+  .site-header {
+    position: static;
+  }
+
+  .site-header-inner {
+    flex-wrap: wrap;
+    gap: 0 var(--space-2);
+    height: auto;
+    padding-bottom: var(--space-2);
+    padding-top: var(--space-2);
+  }
+
+  .header-nav {
+    border-top: 1px solid var(--color-border);
+    gap: var(--space-6);
+    order: 3;
+    padding-top: var(--space-2);
+    width: 100%;
+  }
+
+  .header-nav a {
+    font-size: var(--text-base);
+  }
+
+  .logo {
+    gap: var(--space-2);
+  }
+
+  .logo-mark {
+    height: 1.4rem;
+    padding-right: var(--space-2);
+  }
+
+  .logo-name {
+    font-size: 1rem;
+  }
+
+  .header-actions {
+    gap: 0;
+  }
+
+  .site-footer-inner {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 22.5rem) {
+  .logo-mark {
+    display: none;
+  }
+}
+
+/* Figures: the living SVG of the landing page (components/figures.tsx). Each stops four times, four seconds each; the
+   states s0 to s3 of a figure are shown one at a time. */
+.fig {
+  display: block;
+  font-family: var(--font-mono);
+  height: auto;
+  width: 100%;
+}
+
+/* On a phone a figure keeps a size its text can be read at, and scrolls sideways in its frame */
+@media (max-width: 40rem) {
+  .row-side:has(> .fig) {
+    margin: 0 calc(-1 * var(--gutter));
+    overflow-x: auto;
+    padding: 0 var(--gutter);
+  }
+
+  .fig {
+    min-width: 34rem;
+  }
+}
+
+.fig text {
+  fill: var(--color-text);
+  font-size: 13px;
+}
+
+.fig .fig-small {
+  fill: var(--color-text-muted);
+  font-family: var(--font-text);
+  font-size: 11.5px;
+}
+
+.fig .fig-told {
+  font-family: var(--font-text);
+  font-size: 13.5px;
+}
+
+.fig .fig-title {
+  font-weight: 700;
+}
+
+.fig .fig-request {
+  fill: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.fig .fig-answer {
+  fill: var(--color-ok);
+  font-family: var(--font-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.fig .fig-missing {
+  fill: var(--color-danger);
+  font-family: var(--font-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.fig .fig-mono {
+  fill: var(--color-text);
+  font-size: 11px;
+}
+
+.fig-card {
+  fill: var(--color-surface);
+  stroke: var(--color-border);
+}
+
+.fig-bar {
+  stroke-width: 1.5;
+}
+
+.fig-bar-run {
+  fill: var(--color-sunken);
+  stroke: var(--color-text-muted);
+  stroke-dasharray: 5 3;
+}
+
+.fig-bar-on {
+  fill: color-mix(in srgb, var(--color-ok) 18%, var(--color-surface));
+  stroke: var(--color-ok);
+}
+
+.fig-bar-bad {
+  fill: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
+  stroke: var(--color-danger);
+}
+
+.fig-bar-gone {
+  fill: var(--color-surface);
+  stroke: var(--color-text-muted);
+  stroke-dasharray: 2 3;
+}
+
+.fig-entry {
+  fill: var(--color-sunken);
+  stroke: var(--color-border);
+}
+
+.fig-entry-new {
+  fill: var(--color-accent-soft);
+  stroke: var(--color-accent);
+}
+
+.fig-arrow {
+  fill: none;
+  stroke: var(--color-text-muted);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.fig .s0,
+.fig .s1,
+.fig .s2,
+.fig .s3 {
+  animation: fig-step 16s infinite;
+  opacity: 0;
+}
+
+.fig .s1 {
+  animation-delay: -12s;
+  opacity: 1;
+}
+
+.fig .s2 {
+  animation-delay: -8s;
+}
+
+.fig .s3 {
+  animation-delay: -4s;
+}
+
+@keyframes fig-step {
+  0%,
+  24.9% {
+    opacity: 1;
+  }
+
+  25%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Still: the second stop of each figure, as the SVG draws it without its animation */
+@media (prefers-reduced-motion: reduce) {
+  .fig .s0,
+  .fig .s1,
+  .fig .s2,
+  .fig .s3 {
+    animation: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
