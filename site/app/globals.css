@@ -1118,18 +1118,8 @@ html:has(.figure-dialog[open]) {
   font-size: 11.5px;
 }
 
-.fig .fig-told {
-  font-family: var(--font-text);
-  font-size: 13.5px;
-}
-
 .fig .fig-title {
   font-weight: 700;
-}
-
-.fig .fig-request {
-  fill: var(--color-text-muted);
-  font-size: 12px;
 }
 
 .fig .fig-answer {

@@ -59,11 +59,11 @@ function lastType(entries: string[], id: string): string | undefined {
 }
 
 const cardOf: Record<string, string> = {
-  Start: 'fig-bar-run',
-  End: 'fig-bar-on',
-  Abort: 'fig-bar-bad',
-  CompStart: 'fig-bar-run',
-  Comp: 'fig-bar-gone',
+  Start: 'fig-bar fig-bar-run',
+  End: 'fig-bar fig-bar-on',
+  Abort: 'fig-bar fig-bar-bad',
+  CompStart: 'fig-bar fig-bar-run',
+  Comp: 'fig-bar fig-bar-gone',
 }
 
 const wordOf: Record<string, [string, Tone]> = {
@@ -88,7 +88,8 @@ function Drawing({ story, at }: { story: Story; at: number }): React.ReactElemen
   const entries = story.stops.slice(0, at + 1).flatMap((s) => (s.entry ? [s.entry] : []))
   const newest = stop?.entry
   const touched = newest ? nodeOf(newest) : undefined
-  // The log, its entries as chips that wrap onto a second line
+  // The log, its entries as chips that wrap onto a second line. The log's box holds two rows: a story whose entries
+  // need a third makes the box taller (its height, 66, and the story's height) or its entries fewer
   let cx = 52
   let row = 0
   const chips = entries.map((entry) => {
@@ -125,7 +126,7 @@ function Drawing({ story, at }: { story: Story; at: number }): React.ReactElemen
           return (
             <g key={node.id}>
               <circle
-                className={`fig-card${type ? ' fig-bar-saga' : ''}${fresh ? ' fig-fresh' : ''}`}
+                className={`fig-card${type ? ' fig-bar fig-bar-saga' : ''}${fresh ? ' fig-fresh' : ''}`}
                 cx={node.x}
                 cy={node.y}
                 r={18}
