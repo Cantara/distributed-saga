@@ -81,6 +81,35 @@ AdapterLoader adapters = new AdapterLoader()
 
 The start and end adapters (`SagaStart`, `SagaEnd`) are registered by `AdapterLoader` itself.
 
+### An idempotent step
+
+A step can run more than once: recovery runs again a step whose last entry is `Start`, because the log cannot say
+whether its action had its effect before the crash. An idempotent step has that effect once however often it runs.
+The usual way is a key that is the same on every run, given to a service that does the work once per key.
+
+An adapter does not get the execution id, but it gets the saga input, which `Start` on `S` logs, so a rerun gets the
+same input. Here the saga input is the order id, and `payments` is the application's client of a payment service
+that charges once per idempotency key, as most payment APIs do:
+
+```java
+AdapterLoader adapters = new AdapterLoader()
+        .register(new Adapter<>(String.class, "Payment",
+                // the same key on every run of this step for this order: a second charge returns the first payment
+                (orderId, dependeesOutput) -> payments.charge(orderId + "/charge-card"),
+                // keyed the same way, so it works when the output is null (the charge started but did not end)
+                (orderId, paymentId) -> payments.refund(orderId + "/charge-card")));
+```
+
+- Build the key from the saga input and the outputs of the steps before (`dependeesOutput`, logged in their `End`
+  entries), and from the step's own name. Never from a value the step makes itself, such as a random id or the
+  current time: a rerun would make a new one, and the service would do the work twice.
+- Key the compensating action the same way. It gets `null` as the output when the action started but did not end,
+  and it can run more than once too; a refund by key handles both.
+- If the service cannot deduplicate, do it in the step: record the key in the same transaction as the effect, and
+  skip the effect when the key is already recorded.
+- Keep the saga input stable: in a recovered execution it is the input deserialized from `Start` on `S`, so its type
+  must serialize and deserialize to an equal value.
+
 ## 3. Create a thread pool
 
 ```java

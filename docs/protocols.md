@@ -69,8 +69,9 @@ When the backward walk reaches `S`, it writes `End` on `E`: a rolled-back saga i
 
 - A crash at any point leaves the log saying which effects may have happened: an effect is skipped on recovery only
   if its node's last entry is `End`.
-- So every action and compensating action runs **at least once**, and may run more than once. Applications make them
-  idempotent. Why this is the right trade: [Design decisions](design-decisions.md#1-delivery-semantics-at-least-once).
+- So every action runs **at least once**, and so does every compensating action of a rollback that reaches `S`; either
+  may run more than once. Applications make them idempotent. Each operation's guarantee, at a glance:
+  [Concepts](concepts.md#each-operation-at-a-glance). Why this is the right trade: [Design decisions](design-decisions.md#1-delivery-semantics-at-least-once).
 - `CompStart` is written before a compensating action runs, so a crash during it leaves the node marked as being
   undone, never as done.
 
