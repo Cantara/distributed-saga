@@ -11,7 +11,7 @@ every action has a compensating action. Each step is recorded in a *saga log*, s
 back and a saga interrupted by a crash can be continued.
 
 These pages are for developers who use the libraries or work on them. They are also published as a site at
-<https://cantara.github.io/distributed-saga/>. To get started, see the
+<https://cantara.github.io/distributed-saga/docs/>. To get started, see the
 [README](https://github.com/Cantara/distributed-saga/blob/main/README.md) at the root of the repository.
 
 ## Contents
@@ -29,6 +29,7 @@ These pages are for developers who use the libraries or work on them. They are a
 | [Protocols](protocols.md) | The saga-log entries and how recovery and rollback read them, the two futures, the traversal, and log ownership within and across processes |
 | [Sequence flows](sequence-flows.md) | Diagrams of a saga that succeeds, a fork and join, an abort, a failure, recovery, taking a log, a lost connection, and cross-instance recovery |
 | [Development](development.md) | Building, testing, project layout, conventions and releases |
+| [Glossary](glossary.md) | The terms of this documentation, each with one meaning, and the name the code gives it |
 
 ### Modules
 

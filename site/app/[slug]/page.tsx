@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
-import { DocPage, docMetadata } from '../../components/doc-page'
-import { site } from '../../lib/krantho'
+import { Moved } from '../../components/moved'
+import { docHref, site } from '../../lib/krantho'
 
-// One page for each file in docs/; any other address is not found
+// The addresses the documentation pages had before they moved under /docs/ (/<file name>/): each sends the reader on,
+// so links and bookmarks to them keep working. GitHub Pages cannot redirect, so each is a page of its own.
 export const dynamicParams = false
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
@@ -14,9 +15,12 @@ interface Props {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  return docMetadata('docs', (await params).slug)
+  const href = docHref('docs', (await params).slug)
+  return { title: 'Moved', robots: { index: false }, alternates: { canonical: href } }
 }
 
-export default async function Doc({ params }: Props): Promise<React.ReactElement> {
-  return DocPage({ collection: 'docs', slug: (await params).slug })
+export default async function MovedDoc({ params }: Props): Promise<React.ReactElement> {
+  const { slug } = await params
+  const doc = await site.loader.getPublished({ collection: 'docs', slug })
+  return <Moved basePath={site.basePath} href={docHref('docs', slug)} title={String(doc?.fields.title ?? slug)} />
 }
