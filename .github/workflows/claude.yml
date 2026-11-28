@@ -49,7 +49,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run Claude Code
-        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b  # v1 (v1.0.289)
+        uses: anthropics/claude-code-action@4411a9e9b0283becf4b924f7bce360fd7756c78c  # v1 (v1.0.289)
         with:
           # The model is named here, not inherited.
           # `Agent` is denied so the review runs as one pass: a subagent still running when the main turn ends never
