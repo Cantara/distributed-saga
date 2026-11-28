@@ -117,14 +117,20 @@ curl -X PUT http://127.0.0.1:8139/any/resource/path -d 'Hello Saga!' | jq .
 
 ## Documentation
 
-The developer documentation is in [docs/](docs/README.md):
+The developer documentation is in [docs/](docs/README.md), and published as a site at
+<https://cantara.github.io/distributed-saga/>:
 
 - [Concepts](docs/concepts.md): sagas, adapters, the saga log, execution, rollback, recovery, guarantees
 - [Architecture](docs/architecture.md): modules, Java modules, threading, saga-log providers
-- [Using the library](docs/using.md): a step-by-step guide
-- [Known limitations](docs/limitations.md): read before you go to production
+- [Topology](docs/topology.md): modules, the objects in one instance, the shape of a saga, instances in a cluster
 - [Design decisions](docs/design-decisions.md): why actions run at least once, why steps block on the saga's own
   pool, and why the saga log is synchronous
+- [Using the library](docs/using.md): a step-by-step guide
+- [Deployment models](docs/deployment-models.md): in memory, a file log, or PostgreSQL; sizing, start-up, shutdown
+- [Known limitations](docs/limitations.md): read before you go to production
+- [API reference](docs/api.md): every public type, by task
+- [Protocols](docs/protocols.md): the saga-log entries, the futures, the traversal, and log ownership
+- [Sequence flows](docs/sequence-flows.md): diagrams of success, abort, failure, recovery and log ownership
 - Modules: [future-selector](docs/modules/future-selector.md), [saga-api](docs/modules/saga-api.md),
   [saga-execution](docs/modules/saga-execution.md), [saga-serialization](docs/modules/saga-serialization.md),
   [sagalog-api](docs/modules/sagalog-api.md), [sagalog-file](docs/modules/sagalog-file.md),

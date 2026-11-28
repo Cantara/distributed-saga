@@ -1,3 +1,10 @@
+---
+title: "saga-api"
+description: "The saga definition: Saga, SagaNode and the fluent builder that validates the graph."
+group: Modules
+order: 1
+---
+
 # saga-api
 
 `no.cantara.saga:saga-api` · Java module `no.cantara.saga.api` · no dependencies

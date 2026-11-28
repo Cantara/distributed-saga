@@ -1,3 +1,10 @@
+---
+title: "Design decisions"
+description: "Why actions run at least once, why steps block on the saga's own pool, and why the saga log is synchronous."
+group: Overview
+order: 4
+---
+
 # Design decisions
 
 Three choices define how the library behaves under failure and load:
@@ -7,7 +14,7 @@ Three choices define how the library behaves under failure and load:
 
 Each section below gives the decision, why it is right for durability, delivery semantics and resilience, what it
 asks of applications, and what was rejected. The decisions were taken on 2026-11-24, after the engine was reworked
-in 2.2.0 (joins no longer hold a thread; see the [CHANGELOG](../CHANGELOG.md)). They are judged on the code, not on
+in 2.2.0 (joins no longer hold a thread; see the [CHANGELOG](https://github.com/Cantara/distributed-saga/blob/main/CHANGELOG.md)). They are judged on the code, not on
 how easy or cheap an alternative would be.
 
 ## 1. Delivery semantics: at least once

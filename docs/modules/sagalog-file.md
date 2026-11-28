@@ -1,3 +1,10 @@
+---
+title: "sagalog-file"
+description: "A saga log in files: storage, locking, failures and what to know before using it."
+group: Modules
+order: 5
+---
+
 # sagalog-file
 
 `no.cantara.saga:sagalog-file` · Java module `no.cantara.sagalog.file` · depends on `sagalog-api`
@@ -31,7 +38,7 @@ SagaLogPool pool = initializer.initialize(Map.of(
   rewritten. Every write is synchronous; data is on disk when `write` returns. When a log file is created or deleted,
   and when the folder is created, the folder is synced too, so the file's name is durable as well (on Windows, where a
   folder cannot be synced this way, this step is skipped). The implementation is a copy of Square's Tape `QueueFile`
-  (2.0.0-beta1), in the package `no.cantara.sagalog.file.queue`; see [NOTICE](../../NOTICE). The queue file format is
+  (2.0.0-beta1), in the package `no.cantara.sagalog.file.queue`; see [NOTICE](https://github.com/Cantara/distributed-saga/blob/main/NOTICE). The queue file format is
   Tape's, unchanged; the entry records inside it changed in 2.1.0 (below).
 - Each entry is one queue element in a binary record: a format-version byte (`2`), the id as a long, then execution
   id, entry type, node id, saga name and data, each as a length-prefixed UTF-8 string (length `-1` for null). Any

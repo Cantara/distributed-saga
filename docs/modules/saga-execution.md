@@ -1,3 +1,10 @@
+---
+title: "saga-execution"
+description: "The engine: SagaExecution, adapters, the handoff and completion futures, getState, the pool, and recovery mode."
+group: Modules
+order: 2
+---
+
 # saga-execution
 
 `no.cantara.saga:saga-execution` · Java module `no.cantara.saga.execution` · depends on `saga-api`, `sagalog-api`,

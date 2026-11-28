@@ -1,3 +1,10 @@
+---
+title: "saga-serialization"
+description: "Sagas to and from JSON, and the JSON format."
+group: Modules
+order: 7
+---
+
 # saga-serialization
 
 `no.cantara.saga:saga-serialization` · Java module `no.cantara.saga.serialization` · depends on `saga-api`

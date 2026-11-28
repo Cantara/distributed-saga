@@ -1,3 +1,10 @@
+---
+title: "sagalog-api"
+description: "The saga-log SPI, the pool and its ownership rules, the memory log, and how to write a provider."
+group: Modules
+order: 4
+---
+
 # sagalog-api
 
 `no.cantara.saga:sagalog-api` · Java module `no.cantara.sagalog` · no dependencies

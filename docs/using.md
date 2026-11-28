@@ -1,3 +1,10 @@
+---
+title: "Using the library"
+description: "A step-by-step guide: define a saga, write adapters, create a thread pool, open a saga log, run, roll back, recover, observe and shut down."
+group: Guides
+order: 10
+---
+
 # Using the library
 
 This guide walks through a complete use: define a saga, implement its adapters, choose a saga log, run the saga, wait
@@ -6,7 +13,7 @@ libraries; the output shown is the real output.
 
 ## Dependencies
 
-Add the execution module and one saga-log provider (see [README](../README.md#add-it-to-your-project) for the
+Add the execution module and one saga-log provider (see [README](https://github.com/Cantara/distributed-saga/blob/main/README.md#add-it-to-your-project) for the
 repository and version):
 
 ```xml

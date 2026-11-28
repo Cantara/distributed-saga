@@ -1,3 +1,10 @@
+---
+title: "Concepts"
+description: "Sagas, nodes and adapters, the saga log and its entries, execution, rollback, recovery, and what the library guarantees."
+group: Overview
+order: 1
+---
+
 # Concepts
 
 ## The saga pattern
@@ -13,7 +20,7 @@ This library runs sagas *in one process* (orchestration). The steps may call any
 queues, services. That is what makes the saga "distributed". There is no coordinator service and no messaging between
 saga participants. The only cross-process mechanism is the ownership of a saga log (see [sagalog-api](modules/sagalog-api.md)).
 
-Background reading is listed under "Related work" in the [README](../README.md#related-work).
+Background reading is listed under "Related work" in the [README](https://github.com/Cantara/distributed-saga/blob/main/README.md#related-work).
 
 ## Saga
 

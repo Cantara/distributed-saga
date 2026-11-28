@@ -1,3 +1,10 @@
+---
+title: "future-selector"
+description: "Selectable futures and the thread pool the execution runs on."
+group: Modules
+order: 3
+---
+
 # future-selector
 
 `no.cantara.concurrent.futureselector:future-selector` · Java module `no.cantara.concurrent.futureselector` ·
