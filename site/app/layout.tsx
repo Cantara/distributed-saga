@@ -25,7 +25,9 @@ export default async function RootLayout({
       <body>
         <header className="site-header">
           <Link href="/" className="site-name">
-            {name}
+            {/* public/cantara-mark.svg carries its own light and dark palette */}
+            <img src={`${site.basePath}/cantara-mark.svg`} alt="Cantara" className="site-logo" />
+            <span>{name}</span>
           </Link>
           <a href={repository} className="site-repo">
             GitHub

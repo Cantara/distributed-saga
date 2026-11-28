@@ -19,6 +19,13 @@ order: 3                 # the page's place in the sidebar
 A ```mermaid block is drawn as a diagram, on the site as on GitHub. Mermaid ends a statement at `;`, so a
 diagram's text must not contain one.
 
+## Logo
+
+`public/cantara-mark.svg` (the arcs and the wordmark, in the header) and `public/cantara-logo.svg` (with the two
+taglines) are traced from Cantara's GitHub avatar, one path per ink. The colours are in the `<style>` at the top of
+each file: `--cantara-red` and `--cantara-maroon`, once for light backgrounds and once under
+`prefers-color-scheme: dark`. Tune the palette there.
+
 ## Build
 
 Node 24 and pnpm (the version in `package.json`):
