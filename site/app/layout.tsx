@@ -8,11 +8,22 @@ import './globals.css'
 
 const { name, description, baseUrl } = site.config.site
 
+const base = site.basePath
+
 export const metadata: Metadata = {
   // Absolute URLs (canonical, Open Graph) start at the site's address, path included
   metadataBase: new URL(`${baseUrl.replace(/\/$/, '')}/`),
   title: { default: name, template: `%s — ${name}` },
   description,
+  // Cantara's mark (site/icons/). Declared here, with the path the site is served under: Next links an app/favicon.ico
+  // only when it is served at /favicon.ico, which it is not under /distributed-saga.
+  icons: {
+    icon: [
+      { url: `${base}/favicon.ico`, sizes: '16x16 32x32 48x48', type: 'image/x-icon' },
+      { url: `${base}/icon.svg`, type: 'image/svg+xml' },
+    ],
+    apple: [{ url: `${base}/apple-touch-icon.png`, sizes: '180x180', type: 'image/png' }],
+  },
 }
 
 // A phone lays the page out at its own width; its browser bars take the page's background, light or dark

@@ -56,8 +56,12 @@ missing from that list is not shown. How a section is laid out follows from what
 - a section named in `figureOf`: the text beside its animated figure (`components/figures.tsx`);
 - a pair named in `pairOf`: two sections side by side.
 
-The figures are SVG drawn in the theme's colours. Each steps through four states, and they follow the saga-log
-protocol: keep them true to [Protocols](../docs/protocols.md) when it changes.
+The figures are stories, told one tick at a time: each tick is one write to the saga log, or one event that writes
+nothing (the process stops, or starts again), with a caption that says what happened and why. A step's card is drawn
+from its last entry in the log, so the steps and the log always agree. A figure plays when it comes into view, and
+its numbered buttons go to a tick. A story is data in `components/figures.tsx`: its nodes, and per tick the entry
+written, the caption and any words under a card. Keep the stories true to [Protocols](../docs/protocols.md) and
+to the code when they change.
 
 ## Layout and themes
 
@@ -73,8 +77,18 @@ The header's switch picks the theme: as the system says, light or dark. The choi
 Cantara's mark in the header is traced from Cantara's GitHub avatar into two inks, `public/cantara-mark-paths.svg`.
 The header draws each ink with `<use>`, coloured by `--cantara-red` and `--cantara-maroon` in `globals.css`, once for
 light and once for dark. `public/cantara-mark.svg` and `public/cantara-logo.svg` (with the taglines) are the same
-traces as standalone files, with their palette in their own `<style>`. `app/icon.svg` is the browser tab's icon: a
-saga that forks and joins, on Cantara's red.
+traces as standalone files, with their palette in their own `<style>`.
+
+The icons are drawn from the same traces. Their sources are in `icons/`:
+- `icon.svg`: Cantara's arcs on white, thickened a little to hold at 16 px. It is the browser tab's icon
+  (`public/icon.svg`) and, at 16, 32 and 48 px, `public/favicon.ico`.
+- `icon-full.svg`: the whole mark. It is the home-screen icon of a phone (`public/apple-touch-icon.png`, 180 px) and
+  the web app's icons (`public/icons/icon-192.png`, `icon-512.png`).
+- `icon-maskable.svg`: the whole mark inside the safe circle, for Android's shaped icons
+  (`public/icons/icon-maskable-512.png`).
+
+The PNG files are those SVG files rendered at their sizes, in a browser. `app/layout.tsx` links them, and
+`app/manifest.ts` lists them in `manifest.webmanifest`.
 
 ## Build
 

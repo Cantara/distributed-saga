@@ -1085,8 +1085,8 @@ html:has(.figure-dialog[open]) {
   }
 }
 
-/* Figures: the living SVG of the landing page (components/figures.tsx). Each stops four times, four seconds each; the
-   states s0 to s3 of a figure are shown one at a time. */
+/* Figures: the stories of the landing page (components/figures.tsx), one write to the saga log per tick. A step's
+   card and its entries in the log share one colour per state. */
 .fig {
   display: block;
   font-family: var(--font-mono);
@@ -1096,7 +1096,7 @@ html:has(.figure-dialog[open]) {
 
 /* On a phone a figure keeps a size its text can be read at, and scrolls sideways in its frame */
 @media (max-width: 40rem) {
-  .row-side:has(> .fig) {
+  .story-drawing {
     margin: 0 calc(-1 * var(--gutter));
     overflow-x: auto;
     padding: 0 var(--gutter);
@@ -1235,48 +1235,86 @@ html:has(.figure-dialog[open]) {
   stroke-width: 1.6;
 }
 
-.fig .s0,
-.fig .s1,
-.fig .s2,
-.fig .s3 {
-  animation: fig-step 16s infinite;
-  opacity: 0;
+/* The newest write: the card of its node stands out, as its entry in the log does */
+.fig .fig-fresh {
+  stroke-width: 2.5;
 }
 
-.fig .s1 {
-  animation-delay: -12s;
-  opacity: 1;
+.fig .fig-banner {
+  font-family: var(--font-text);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
-.fig .s2 {
-  animation-delay: -8s;
+/* A story: the drawing, a bar with play or pause and a button per tick, and the caption of the tick */
+.story-bar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
-.fig .s3 {
-  animation-delay: -4s;
+.story-play,
+.story-ticks button {
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font: 600 var(--text-xs) / 1 var(--font-text);
+  height: 1.9rem;
+  justify-content: center;
+  min-width: 1.9rem;
+  padding: 0;
 }
 
-@keyframes fig-step {
-  0%,
-  24.9% {
-    opacity: 1;
-  }
-
-  25%,
-  100% {
-    opacity: 0;
-  }
+.story-play:hover,
+.story-ticks button:hover {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
 }
 
-/* Still: the second stop of each figure, as the SVG draws it without its animation */
+.story-ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A tick that writes nothing (the process stops, starts again) */
+.story-ticks .story-event {
+  border-style: dashed;
+}
+
+.story-ticks button[aria-current='step'] {
+  background: var(--color-text);
+  border-color: var(--color-text);
+  color: var(--color-bg);
+}
+
+.story-caption {
+  color: var(--color-text);
+  font-size: var(--text-base);
+  margin: var(--space-3) 0 0;
+  max-width: 44rem;
+  min-height: calc(3 * var(--leading-body) * 1em);
+}
+
+.story-count {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-right: var(--space-2);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .fig .s0,
-  .fig .s1,
-  .fig .s2,
-  .fig .s3 {
-    animation: none !important;
-  }
-
   *,
   *::before,
   *::after {
