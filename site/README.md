@@ -90,6 +90,10 @@ The icons are drawn from the same traces. Their sources are in `icons/`:
 The PNG files are those SVG files rendered at their sizes, in a browser. `app/layout.tsx` links them, and
 `app/manifest.ts` lists them in `manifest.webmanifest`.
 
+A link to the site shows a card where it is shared (Slack, LinkedIn, X, Teams): `public/og.png`, 1200 × 630, rendered
+in a browser from `icons/og.html`. Every page names it in its Open Graph and X tags (`lib/share.ts`), with the page's
+own title, description and address. Render it again when the release or the headline changes.
+
 ## Build
 
 Node 24 and pnpm (the version in `package.json`):

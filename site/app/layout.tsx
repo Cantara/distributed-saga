@@ -4,6 +4,7 @@ import { GitHubLink, Logo, repository } from '../components/brand'
 import { MenuButton } from '../components/menu-button'
 import { ThemeSwitch, themeScript } from '../components/theme-switch'
 import { site } from '../lib/krantho'
+import { shareTags } from '../lib/share'
 import './globals.css'
 
 const { name, description, baseUrl } = site.config.site
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(`${baseUrl.replace(/\/$/, '')}/`),
   title: { default: name, template: `%s — ${name}` },
   description,
+  ...shareTags(name, description ?? '', '/', 'website'),
   // Cantara's mark (site/icons/). Declared here, with the path the site is served under: Next links an app/favicon.ico
   // only when it is served at /favicon.ico, which it is not under /distributed-saga.
   icons: {

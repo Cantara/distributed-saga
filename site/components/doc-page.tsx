@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getCMSContent, resolveSeoContent, SeoJsonLd } from '@krantho/ui-react/server'
 import { prepareHtml } from '../lib/html'
+import { shareTags } from '../lib/share'
 import { type DocCollection, docHref, docLinks, site } from '../lib/krantho'
 import { CodeCopy } from './code-copy'
 import { FigureZoom } from './figure-zoom'
@@ -17,7 +18,7 @@ export async function docMetadata(collection: DocCollection, slug: string): Prom
     title: seo.title,
     description: seo.description,
     alternates: { canonical: href },
-    openGraph: { title: seo.title, description: seo.description, url: href },
+    ...shareTags(seo.title, seo.description, href),
   }
 }
 
