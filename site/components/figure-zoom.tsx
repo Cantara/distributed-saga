@@ -22,12 +22,6 @@ function nameOf(figure: HTMLElement): string {
 }
 
 /**
- * Lets the reader see every figure of the page large: a figure opens in a dialog over the page, as wide as the window,
- * with a click, or with Enter or Space when it has the focus. The dialog shows a copy of the drawing as it is then (in
- * the page's theme), and closes with Escape, its button, or a click beside the drawing. A figure is told to a screen
- * reader as a button that opens it. Without JavaScript the figures are shown as they are.
- */
-/**
  * The copy of a drawing with ids of its own: each id gets `-zoom`, and so does every reference to it (an ARIA label,
  * `url(#…)`, `href="#…"`, and the selectors of a `<style>` in the drawing, as Mermaid's), so the page has no id twice
  * and the copy is labelled by its own title.
@@ -55,6 +49,12 @@ function withOwnIds(svg: SVGSVGElement): SVGSVGElement {
   return svg
 }
 
+/**
+ * Lets the reader see every figure of the page large: a figure opens in a dialog over the page, as wide as the window,
+ * with a click, or with Enter or Space when it has the focus. The dialog shows a copy of the drawing as it is then (in
+ * the page's theme), and closes with Escape, its button, or a click beside the drawing. A figure is told to a screen
+ * reader as a button that opens it. Without JavaScript the figures are shown as they are.
+ */
 export function FigureZoom(): null {
   useEffect(() => {
     const dialog = document.createElement('dialog')

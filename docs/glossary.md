@@ -123,8 +123,10 @@ Completes once `Start` on `S` is in the saga log: from then on the saga survives
 
 ### Completion future
 
-Completes once the saga is finished and `onComplete` has returned; exceptionally when the saga failed or was rolled
-back. Code: `SagaHandoffControl.getCompletionFuture()`.
+Completes once the saga is finished and `onComplete` has returned. It completes exceptionally after a rollback, with
+the `AbortSagaException`; after any other failure, with that failure; and with `SagaOnCompleteException` when
+`onComplete` threw after a saga that succeeded. See [the handoff protocol](protocols.md#the-handoff-protocol). Code:
+`SagaHandoffControl.getCompletionFuture()`.
 
 ### onComplete
 
