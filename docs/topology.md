@@ -14,22 +14,7 @@ only their saga logs.
 
 ## Modules
 
-```mermaid
-flowchart BT
-    fs[future-selector]
-    api[saga-api]
-    logapi[sagalog-api<br/>SPI, pool, memory log]
-    exec[saga-execution]
-    ser[saga-serialization]
-    file[sagalog-file]
-    pg[sagalog-postgres]
-    exec --> fs
-    exec --> api
-    exec --> logapi
-    ser --> api
-    file --> logapi
-    pg --> logapi
-```
+![The modules and what they depend on](images/modules.svg)
 
 The arrows point from a module to what it needs. `future-selector`, `saga-api` and `sagalog-api` depend on nothing.
 The providers depend only on `sagalog-api`, never on each other or on the engine, and the engine finds them through
@@ -38,30 +23,7 @@ The providers depend only on `sagalog-api`, never on each other or on the engine
 
 ## Inside one application instance
 
-```mermaid
-flowchart TB
-    app[Application code]
-    subgraph lib [Distributed Saga, in the application's process]
-        exec[SagaExecution<br/>one per saga]
-        pool[SelectableThreadPoolExecutor<br/>owned by the application]
-        logpool[SagaLogPool<br/>one per provider]
-        log1[SagaLog]
-        log2[SagaLog]
-    end
-    adapters[Adapters]
-    ext[(Databases, queues,<br/>services)]
-    store[(Saga-log storage:<br/>PostgreSQL, files, memory)]
-    app -->|executeSaga| exec
-    app -->|tryAcquire / releaseOwnership| logpool
-    exec -->|walks| pool
-    pool -->|executeAction| adapters
-    adapters --> ext
-    exec -->|write, read| log1
-    logpool --> log1
-    logpool --> log2
-    log1 --> store
-    log2 --> store
-```
+![Inside one application instance](images/instance.svg)
 
 | Object | How many | Owned by | Shared by |
 |---|---|---|---|
@@ -81,14 +43,7 @@ carries its execution id, but then `truncate()` in one execution's `onComplete` 
 
 A saga is a directed acyclic graph from `S` to `E`. Two shapes make it parallel:
 
-```mermaid
-flowchart LR
-    S((S)) --> a[reserve-stock]
-    S --> b[charge-card]
-    a --> j[ship]
-    b --> j
-    j --> E((E))
-```
+![The shape of a saga](images/saga-shape.svg)
 
 - **Fork.** A node with several outgoing links: its walk continues into one of them and submits a new walk to the
   pool for each other, so the branches run at the same time.
@@ -104,25 +59,7 @@ The rules a graph must keep (no cycles, every node reachable from `S`) are check
 A cluster is the instances that share one saga-log storage. Each instance has its own `cluster.instance-id`, and it
 is part of the id of every log the instance creates.
 
-```mermaid
-flowchart TB
-    subgraph i1 [Instance 01]
-        p1[SagaLogPool]
-    end
-    subgraph i2 [Instance 02]
-        p2[SagaLogPool]
-    end
-    subgraph db [PostgreSQL: schema cluster.owner]
-        locks[(Locks:<br/>lock key and owner token per log)]
-        t1[(SAGALOG_orders_01_log-0 ...)]
-        t2[(SAGALOG_orders_02_log-0 ...)]
-    end
-    p1 -->|owns, writes| t1
-    p2 -->|owns, writes| t2
-    p2 -.->|recovers, when 01 is gone| t1
-    p1 --- locks
-    p2 --- locks
-```
+![Several instances share their saga logs](images/cluster.svg)
 
 - **Instance-local logs** are the ones an instance registers (`registerInstanceLocalIdFor`) and hands out to its own
   sagas.

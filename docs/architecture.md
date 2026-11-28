@@ -11,20 +11,7 @@ order: 2
 
 The repository is one Maven reactor (`pom.xml` at the root). Every library module has the same version.
 
-```
-future-selector        saga-api                    sagalog-api
-(selectable futures)   (Saga, SagaNode, builder)   (SagaLog SPI, pool, memory log)
-        │               │            │              │              │
-        └───────┬───────┘            │              │              │
-                │      ┌─────────────┘              │              │
-                ▼      ▼                            ▼              ▼
-          saga-execution ◄────────────────── sagalog-api   sagalog-file   sagalog-postgres
-          (runs sagas)                                    (file log)     (PostgreSQL log)
-
-          saga-serialization ◄── saga-api   (sagas to and from JSON)
-
-          saga-samples/polyglot-persistence  (uses all but sagalog-postgres)
-```
+![The modules and what they depend on](images/modules.svg)
 
 | Module | Depends on (inside the project) | Third-party runtime dependencies |
 |---|---|---|

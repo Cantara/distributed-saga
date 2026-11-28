@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 799 702" width="799" height="702" role="img" aria-labelledby="fork-join-title fork-join-desc">
+<title id="fork-join-title">A fork and a join</title>
+<desc id="fork-join-desc">Walk 1 starts the saga and submits a new walk for a; it runs b itself. The walk that finishes last runs the join j; the other ends.</desc>
+<style>
+.bg{fill:#fbfbf9}
+.box{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.2}
+.lib{fill:#fbe9ea;stroke:#b3262c;stroke-width:1.5}
+.frame{fill:none;stroke:#8f9297;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#b3262c;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#8f9297;stroke-width:1.1}
+.tab{fill:#f2f2ef;stroke:#8f9297;stroke-width:1.1}
+.divider{stroke:#8f9297;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#8f9297;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#8f9297;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#b3262c}
+.head{fill:#8f9297}
+.head-fail{fill:none;stroke:#b3262c;stroke-width:1.8}
+.note{fill:#fff7e0;stroke:#d9c17a;stroke-width:1}
+.num{fill:#1d1f22}
+.num-text{fill:#fbfbf9;font-size:10.5px;font-weight:700}
+text{fill:#1d1f22;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#55595f;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#b3262c}
+.ok{fill:#1f7a4d}
+@media (prefers-color-scheme: dark){
+.bg{fill:#121315}
+.box{fill:#202226;stroke:#7b7f86;stroke-width:1.2}
+.lib{fill:#3a1c1e;stroke:#f06a70;stroke-width:1.5}
+.frame{fill:none;stroke:#7b7f86;stroke-width:1.2;stroke-dasharray:6 4}
+.frame-lib{fill:none;stroke:#f06a70;stroke-width:1.4;stroke-dasharray:6 4}
+.group{fill:none;stroke:#7b7f86;stroke-width:1.1}
+.tab{fill:#202226;stroke:#7b7f86;stroke-width:1.1}
+.divider{stroke:#7b7f86;stroke-width:1;stroke-dasharray:4 4}
+.lifeline{stroke:#7b7f86;stroke-width:1;stroke-dasharray:3 4}
+.edge{fill:none;stroke:#7b7f86;stroke-width:1.5}
+.dash{stroke-dasharray:5 4}
+.fail{stroke:#ff8a8f}
+.head{fill:#7b7f86}
+.head-fail{fill:none;stroke:#ff8a8f;stroke-width:1.8}
+.note{fill:#2b2617;stroke:#6b5c2c;stroke-width:1}
+.num{fill:#e9e9e6}
+.num-text{fill:#121315;font-size:10.5px;font-weight:700}
+text{fill:#e9e9e6;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}
+.title{font-size:13.5px;font-weight:650}
+.small{fill:#a8aaad;font-size:11.5px}
+.label{font-size:12.5px}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12.5px}
+.accent{fill:#f06a70}
+.ok{fill:#5fc995}
+}
+</style>
+<rect class="bg" width="100%" height="100%" rx="8"/>
+<rect class="group" x="20" y="258" width="758.6" height="256" rx="6"/>
+<path class="tab" d="M20,264 a6,6 0 0 1 6,-6 h35.4 v14 l-8,8 h-33.4 Z"/>
+<text x="29" y="274" class="title">par</text>
+<text x="71.4" y="274" class="label">[branch b on walk 1]</text>
+<line class="divider" x1="20" y1="408" x2="778.6" y2="408"/>
+<text x="30" y="425" class="label">[branch a on walk 2]</text>
+<line class="lifeline" x1="143.8" y1="62" x2="143.8" y2="686"/>
+<rect class="box" x="85.8" y="20" width="116" height="42" rx="7"/>
+<text x="143.8" y="45.5" class="title" text-anchor="middle">Walk 1</text>
+<line class="lifeline" x1="351.6" y1="62" x2="351.6" y2="686"/>
+<rect class="box" x="293.6" y="20" width="116" height="42" rx="7"/>
+<text x="351.6" y="45.5" class="title" text-anchor="middle">Pool</text>
+<line class="lifeline" x1="501.6" y1="62" x2="501.6" y2="686"/>
+<rect class="box" x="443.6" y="20" width="116" height="42" rx="7"/>
+<text x="501.6" y="45.5" class="title" text-anchor="middle">Walk 2</text>
+<line class="lifeline" x1="716.6" y1="62" x2="716.6" y2="686"/>
+<rect class="box" x="658.6" y="20" width="116" height="42" rx="7"/>
+<text x="716.6" y="45.5" class="title" text-anchor="middle">Log</text>
+<line class="edge" x1="153.8" y1="102" x2="715.6" y2="102"/>
+<path class="head" d="M715.6,102 L706.6,106.5 L706.6,97.5 Z"/>
+<text x="435.2" y="95" class="label" text-anchor="middle">Start(S)</text>
+<circle class="num" cx="143.8" cy="102" r="9"/>
+<text x="143.8" y="105.8" class="num-text" text-anchor="middle">1</text>
+<rect class="note" x="39.1" y="122" width="209.2" height="44" rx="5"/>
+<text x="143.8" y="142" class="label" text-anchor="middle">S done: signal a and b,</text>
+<text x="143.8" y="158" class="label" text-anchor="middle">both now have every signal</text>
+<line class="edge" x1="153.8" y1="196" x2="350.6" y2="196"/>
+<path class="head" d="M350.6,196 L341.6,200.5 L341.6,191.5 Z"/>
+<text x="252.7" y="189" class="label" text-anchor="middle">submit a new walk for a</text>
+<circle class="num" cx="143.8" cy="196" r="9"/>
+<text x="143.8" y="199.8" class="num-text" text-anchor="middle">2</text>
+<line class="edge" x1="361.6" y1="234" x2="500.6" y2="234"/>
+<path class="head" d="M500.6,234 L491.6,238.5 L491.6,229.5 Z"/>
+<text x="431.6" y="227" class="label" text-anchor="middle">run</text>
+<circle class="num" cx="351.6" cy="234" r="9"/>
+<text x="351.6" y="237.8" class="num-text" text-anchor="middle">3</text>
+<line class="edge" x1="153.8" y1="306" x2="715.6" y2="306"/>
+<path class="head" d="M715.6,306 L706.6,310.5 L706.6,301.5 Z"/>
+<text x="435.2" y="299" class="label" text-anchor="middle">Start(b), action, End(b)</text>
+<circle class="num" cx="143.8" cy="306" r="9"/>
+<text x="143.8" y="309.8" class="num-text" text-anchor="middle">4</text>
+<rect class="note" x="56.9" y="326" width="173.6" height="28" rx="5"/>
+<text x="143.8" y="346" class="label" text-anchor="middle">signal j: 1 of 2 left</text>
+<rect class="note" x="32" y="366" width="223.5" height="28" rx="5"/>
+<text x="143.8" y="386" class="label" text-anchor="middle">nothing started: walk 1 ends</text>
+<line class="edge" x1="511.6" y1="452" x2="715.6" y2="452"/>
+<path class="head" d="M715.6,452 L706.6,456.5 L706.6,447.5 Z"/>
+<text x="614.1" y="445" class="label" text-anchor="middle">Start(a), action, End(a)</text>
+<circle class="num" cx="501.6" cy="452" r="9"/>
+<text x="501.6" y="455.8" class="num-text" text-anchor="middle">5</text>
+<rect class="note" x="368.5" y="472" width="266.3" height="28" rx="5"/>
+<text x="501.6" y="492" class="label" text-anchor="middle">signal j: 0 left, so j starts here</text>
+<line class="edge" x1="511.6" y1="544" x2="715.6" y2="544"/>
+<path class="head" d="M715.6,544 L706.6,548.5 L706.6,539.5 Z"/>
+<text x="614.1" y="537" class="label" text-anchor="middle">Start(j)</text>
+<circle class="num" cx="501.6" cy="544" r="9"/>
+<text x="501.6" y="547.8" class="num-text" text-anchor="middle">6</text>
+<rect class="note" x="386.3" y="564" width="230.6" height="28" rx="5"/>
+<text x="501.6" y="584" class="label" text-anchor="middle">j gets the outputs of a and b</text>
+<line class="edge" x1="511.6" y1="622" x2="715.6" y2="622"/>
+<path class="head" d="M715.6,622 L706.6,626.5 L706.6,617.5 Z"/>
+<text x="614.1" y="615" class="label" text-anchor="middle">End(j)</text>
+<circle class="num" cx="501.6" cy="622" r="9"/>
+<text x="501.6" y="625.8" class="num-text" text-anchor="middle">7</text>
+<line class="edge" x1="511.6" y1="660" x2="715.6" y2="660"/>
+<path class="head" d="M715.6,660 L706.6,664.5 L706.6,655.5 Z"/>
+<text x="614.1" y="653" class="label" text-anchor="middle">End(E)</text>
+<circle class="num" cx="501.6" cy="660" r="9"/>
+<text x="501.6" y="663.8" class="num-text" text-anchor="middle">8</text>
+</svg>
